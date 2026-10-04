@@ -20,3 +20,5 @@ Any static server, e.g. `npx serve .`
 3. **Dish → menu**: the plate shrinks into the opening of the menu as tonight's signature.
 
 Respects `prefers-reduced-motion` (dissolves instead of camera moves).
+
+Live: https://vesper-riga.vercel.app
