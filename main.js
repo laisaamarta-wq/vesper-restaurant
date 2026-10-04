@@ -51,9 +51,11 @@ function boot() {
     if (finished) return; finished = true;
     setTimeout(() => { document.body.classList.remove('is-loading'); $('[data-hero]').classList.add('is-in'); }, 350);
   }
+  // wait until each frame is decoded, not just downloaded, so the street never flashes black
+  const ready = img => (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(step);
   critical.forEach(img => {
-    if (img.complete && img.naturalWidth) step();
-    else { img.addEventListener('load', step, { once: true }); img.addEventListener('error', step, { once: true }); }
+    if (img.complete && img.naturalWidth) ready(img);
+    else { img.addEventListener('load', () => ready(img), { once: true }); img.addEventListener('error', step, { once: true }); }
   });
   setTimeout(finish, 4500);
 }
