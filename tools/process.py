@@ -22,6 +22,7 @@ WIDE = {  # full-bleed images: 960 / 1920 / 2880
     "interior-main": (960, 1920, 2880),
     "table-signature": (960, 1920, 2880),
     "table-candle-detail": (960, 1920),
+    "exterior-night": (960, 1920, 2880),
 }
 PORTRAIT = {  # editorial 4:5
     "bar": (800, 1200, 1800),

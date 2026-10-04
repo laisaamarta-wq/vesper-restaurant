@@ -127,3 +127,10 @@ Reject: warped verticals, melted cutlery, deformed plate rims, impossible reflec
 Magnific's upscaler on ImagineArt could not be used: the account's free daily ImagineArt credits ran out after the first generation round. The 4K hero upscale was done on Higgsfield instead.
 
 Deviation from the bible, kept on purpose: the glimpse of the dining room through the street-facing glass shows white tablecloths, while the interior has bare oak. The detail is tiny and the interior is revealed through the doorway mask, so it never reads as a mismatch.
+
+## 8. Audit + polish pass (v2)
+
+- **Kitchen image replaced.** v1 (tweezers + dill) had hands that read as generated. Higgsfield made 4 new candidates: basting in the pan, spooning sauce, and 2 of setting the plate down. Two were rejected: one had a floating saucepan and a third arm, the other an unnatural spoon grip. The keeper is a cook wiping the rim of the cod plate at the pass, with order tickets and a heat lamp behind, both hands on the plate.
+- **Tablecloths removed** from the street and door photos with a Nano Banana Pro edit. An overlay check against the originals showed nothing else moved, so the door coordinates still hold. The room seen through the glass now matches the interior: bare oak, candles, oxblood napkins.
+- **New exterior-night**: the same frame later in the evening, with guests as soft silhouettes inside. It closes the site under "An evening worth staying for."
+- **Motion**: the dish → menu stage went from 640vh to 300vh on desktop and from 560vh to 250vh on phones. The walk-in went from 520 to 380vh (desktop) and from 440 to 320vh (phones).

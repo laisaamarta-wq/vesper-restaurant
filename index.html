@@ -125,10 +125,10 @@
     <figure class="plate plate--b" data-reveal>
       <div class="plate__img"><img loading="lazy" decoding="async"
         src="assets/web/kitchen-hearth-1200.webp" srcset="assets/web/kitchen-hearth-800.webp 800w, assets/web/kitchen-hearth-1200.webp 1200w, assets/web/kitchen-hearth-1800.webp 1800w"
-        sizes="(max-width: 760px) 92vw, 38vw" alt="A cook's hands placing dill on a plate at the pass, the wood hearth glowing behind."></div>
+        sizes="(max-width: 760px) 92vw, 38vw" alt="At the pass during service: a cook wipes the rim of the plate before the cod goes out, order tickets and the hearth behind."></div>
       <figcaption>
-        <p class="meta">The Hearth</p>
-        <p>Birch, alder and apple wood. Almost everything we cook passes the fire — briefly, or for hours.</p>
+        <p class="meta">The Kitchen</p>
+        <p>Birch, alder and apple wood. Almost everything we cook passes the fire, then the pass, then a last wipe of the rim.</p>
       </figcaption>
     </figure>
   </div>
@@ -174,7 +174,7 @@
 
     <div class="menuopen" data-menuopen>
       <p class="meta">04 — The Menu · Autumn</p>
-      <h2 class="display"><span class="line"><span>The Menu</span></span></h2>
+      <h2 class="display display--m"><span class="line"><span>The Menu</span></span></h2>
       <div class="menuopen__feat">
         <p class="meta">Tonight's signature</p>
         <p class="menuopen__name">Baltic cod, brown butter, charred leek</p>
@@ -253,18 +253,33 @@
   <div class="menu__peek" data-peek aria-hidden="true"><img alt=""></div>
 </section>
 
-<!-- ============ 05 THE NIGHT — reservation ============ -->
-<section class="night" id="night" data-chapter-id="05|The Night" aria-labelledby="night-title">
+<!-- ============ 05 THE NIGHT — the evening, from the street ============ -->
+<section class="finale" id="night" data-stage="outro" data-chapter-id="05|The Night" aria-labelledby="finale-title">
+  <div class="finale__img" data-outro-img>
+    <img loading="lazy" decoding="async" src="assets/web/exterior-night-1920.webp"
+      srcset="assets/web/exterior-night-960.webp 960w, assets/web/exterior-night-1920.webp 1920w, assets/web/exterior-night-2880.webp 2880w"
+      sizes="100vw" alt="Vesper late at night: candlelit tables glowing behind the arched door, guests still at dinner, the cobbles wet with light.">
+  </div>
+  <div class="finale__copy wrap">
+    <p class="meta">05 — The Night</p>
+    <h2 class="display" id="finale-title"><span class="line"><span>An evening</span></span><span class="line"><span><em>worth staying for.</em></span></span></h2>
+    <p class="finale__lede">Dinner from six. The fire is left to burn down slowly, the wine stays open, and the bar keeps its lights on until one.</p>
+    <a class="btn-line btn-line--lg" href="#reserve">Reserve a table <span aria-hidden="true">→</span></a>
+  </div>
+</section>
+
+<!-- ============ RESERVATION ============ -->
+<section class="night" id="reserve" aria-labelledby="night-title">
   <div class="night__bg" data-night-bg>
     <img loading="lazy" decoding="async" src="assets/web/table-candle-detail-1920.webp"
       srcset="assets/web/table-candle-detail-960.webp 960w, assets/web/table-candle-detail-1920.webp 1920w"
       sizes="100vw" alt="">
   </div>
-  <div class="night__inner wrap" id="reserve">
+  <div class="night__inner wrap">
     <div class="night__head">
-      <p class="meta">05 — The Night</p>
-      <h2 class="display" id="night-title"><span class="line"><span>Stay for</span></span><span class="line"><span><em>the evening.</em></span></span></h2>
-      <p class="night__lede">We keep twelve tables and a counter for walk-ins. Tables are held for two and a half hours — longer, if the night asks for it.</p>
+      <p class="meta">Reservations</p>
+      <h2 class="display display--m" id="night-title"><span class="line"><span>Choose</span></span><span class="line"><span><em>your evening.</em></span></span></h2>
+      <p class="night__lede">Twelve tables, plus a counter kept for walk-ins. A table is yours for two and a half hours, and longer if the night asks for it.</p>
     </div>
 
     <form class="res" data-res novalidate>
@@ -285,9 +300,9 @@
             <button type="button" data-guests="1" aria-label="More guests">+</button>
           </div>
         </fieldset>
-        <label class="res__f res__name">
+        <label class="res__f res__name" for="res-name">
           <span class="meta">Name</span>
-          <input type="text" name="name" autocomplete="name" placeholder="Your name" required>
+          <input id="res-name" type="text" name="name" autocomplete="name" placeholder="Your name" required>
         </label>
       </div>
       <button class="btn-line btn-line--lg" type="submit">Reserve a table <span aria-hidden="true">→</span></button>
@@ -296,23 +311,13 @@
   </div>
 </section>
 
-<!-- ============ OUTRO — leaving into the street ============ -->
-<section class="outro" data-stage="outro" aria-label="Good night">
-  <div class="outro__img" data-outro-img>
-    <img loading="lazy" decoding="async" src="assets/web/exterior-blue-hour-1920.webp"
-      srcset="assets/web/exterior-blue-hour-960.webp 960w, assets/web/exterior-blue-hour-1920.webp 1920w" sizes="100vw" alt="">
-  </div>
-  <div class="outro__copy wrap">
-    <p class="display display--xl"><em>Good night.</em></p>
-  </div>
-  <footer class="foot wrap">
-    <div><p class="foot__brand">Vesper</p><p class="meta">Evening dining · Old Town, Riga</p></div>
-    <div><p class="meta">Hours</p><p>Tuesday — Saturday<br>Kitchen 18:00 — 22:30<br>Bar until 01:00</p></div>
-    <div><p class="meta">Find us</p><p>Old Town, Riga<br>Latvia</p></div>
-    <div><a class="btn-line" href="#reserve">Reserve a table <span aria-hidden="true">→</span></a></div>
-    <p class="foot__credit meta">Concept website — art direction, UX/UI &amp; imagery by Marta Jakovleva. Vesper is a fictional restaurant.</p>
-  </footer>
-</section>
+<footer class="foot wrap">
+  <div><p class="foot__brand">Vesper</p><p class="meta">Evening dining · Old Town, Riga</p></div>
+  <div><p class="meta">Hours</p><p>Tuesday — Saturday<br>Kitchen 18:00 — 22:30<br>Bar until 01:00</p></div>
+  <div><p class="meta">Find us</p><p>Old Town, Riga<br>Latvia</p></div>
+  <div><a class="btn-line" href="#reserve">Reserve a table <span aria-hidden="true">→</span></a></div>
+  <p class="foot__credit meta">Concept website — art direction, UX/UI &amp; imagery by Marta Jakovleva. Vesper is a fictional restaurant.</p>
+</footer>
 
 </main>
 
