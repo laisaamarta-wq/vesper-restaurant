@@ -478,11 +478,27 @@ $$('a[href^="#"]').forEach(a => a.addEventListener('click', jump));
 function menu() {
   const items = $$('.mi[data-img]');
   // touch / small screens: a quiet thumbnail inline instead of hover
-  items.forEach(li => {
-    const im = document.createElement('img');
-    im.className = 'mi__thumb'; im.loading = 'lazy'; im.decoding = 'async'; im.alt = ''; im.src = li.dataset.img;
-    li.appendChild(im);
-  });
+  // Thumbnails are only built on narrow screens, and loaded by our own observer
+  // (native loading="lazy" occasionally never fired on mobile Chrome, leaving gaps).
+  const narrow = matchMedia('(max-width: 760px)');
+  let thumbsMade = false;
+  const fill = im => { if (!im.src) im.src = im.dataset.src; };
+  const makeThumbs = () => {
+    if (thumbsMade || !narrow.matches) return; thumbsMade = true;
+    const thumbs = items.map(li => {
+      const im = document.createElement('img');
+      im.className = 'mi__thumb'; im.decoding = 'async'; im.alt = ''; im.width = 64; im.height = 80; im.dataset.src = li.dataset.img;
+      li.appendChild(im); return im;
+    });
+    const tio = 'IntersectionObserver' in window && new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { fill(e.target); tio.unobserve(e.target); }
+    }), { rootMargin: '1200px 0px' });
+    thumbs.forEach(im => tio ? tio.observe(im) : fill(im));
+    // safety net: small files, so make sure every one is in once the page has settled
+    const settle = () => setTimeout(() => thumbs.forEach(fill), 2500);
+    document.readyState === 'complete' ? settle() : addEventListener('load', settle, { once: true });
+  };
+  makeThumbs(); narrow.addEventListener && narrow.addEventListener('change', makeThumbs);
   // index highlight
   const links = $$('[data-mi]');
   const io = new IntersectionObserver(es => es.forEach(e => {
