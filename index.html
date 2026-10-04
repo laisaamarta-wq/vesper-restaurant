@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -8,7 +8,9 @@
 <meta name="theme-color" content="#0e0c0a">
 <meta property="og:title" content="Vesper — Evening Dining, Riga">
 <meta property="og:description" content="Twelve tables under a limewashed vault. A wood hearth. Dinner begins after dark.">
-<meta property="og:image" content="assets/web/og.jpg">
+<meta property="og:image" content="https://vesper-restaurant.vercel.app/assets/web/og.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/web/favicon.svg" type="image/svg+xml">
 <link rel="preload" as="font" type="font/woff2" href="assets/fonts/instrument-serif-latin-400-normal.woff2" crossorigin>
 <link rel="stylesheet" href="fonts.css">
@@ -250,7 +252,7 @@
       </section>
     </div>
   </div>
-  <div class="menu__peek" data-peek aria-hidden="true"><img alt=""></div>
+  <div class="menu__peek" data-peek aria-hidden="true"><img src="assets/web/dish-signature-thumb.webp" alt="" loading="lazy" decoding="async"></div>
 </section>
 
 <!-- ============ 05 THE NIGHT — the evening, from the street ============ -->
@@ -300,7 +302,7 @@
             <button type="button" data-guests="1" aria-label="More guests">+</button>
           </div>
         </fieldset>
-        <label class="res__f res__name" for="res-name">
+        <label class="res__f res__name">
           <span class="meta">Name</span>
           <input id="res-name" type="text" name="name" autocomplete="name" placeholder="Your name" required>
         </label>
