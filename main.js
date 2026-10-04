@@ -1,0 +1,598 @@
+/* ==========================================================
+   VESPER — scroll-driven camera
+   The camera is the visitor. Native scrolling stays untouched;
+   scroll position only drives what the camera sees.
+   ========================================================== */
+(() => {
+'use strict';
+
+/* ---------- art direction data (normalised to each image) ----------
+   door: the glass opening of the entrance, as seen in each photo
+   plate: bounding box of the cut-out dish inside the table photo   */
+const ART = window.VESPER_ART || {
+  ext:   { w: 4096, h: 2304, door: { x: .4375, y: .272, w: .130, h: .453 }, arch: .245 },
+  door:  { w: 5504, h: 3072, door: { x: .369,  y: .054, w: .261, h: .842 }, arch: .222 },
+  table: { w: 2528, h: 1696, plate:{ x: .1576, y: .3416, w: .6990, h: .5766 } },
+};
+
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FINE = matchMedia('(hover: hover) and (pointer: fine)').matches;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const map = (v, a, b) => clamp((v - a) / (b - a));
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;        // inOutCubic
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeIn = t => t * t * t;
+
+let vw = innerWidth, vh = innerHeight;
+
+/* cover-fit: where does a normalised rect inside an image land on screen? */
+function coverRect(img, r) {
+  const s = Math.max(vw / img.w, vh / img.h);
+  const dw = img.w * s, dh = img.h * s;
+  const ox = (vw - dw) / 2, oy = (vh - dh) / 2;
+  return { x: ox + r.x * dw, y: oy + r.y * dh, w: r.w * dw, h: r.h * dh, cx: ox + (r.x + r.w / 2) * dw, cy: oy + (r.y + r.h / 2) * dh };
+}
+/* transform that maps point P to F and scales by Z (transform-origin 0 0) */
+const camT = (P, F, Z) => `translate3d(${F.x - P.x * Z}px, ${F.y - P.y * Z}px, 0) scale(${Z})`;
+
+/* ==========================================================
+   LOADER
+   ========================================================== */
+const loaderLine = $('.loader__line span');
+function boot() {
+  const critical = $$('[data-layer="ext"] img, [data-layer="door"] img, [data-layer="int"] img');
+  let done = 0;
+  const step = () => { done++; loaderLine && loaderLine.style.setProperty('--p', done / critical.length); if (done >= critical.length) finish(); };
+  let finished = false;
+  function finish() {
+    if (finished) return; finished = true;
+    setTimeout(() => { document.body.classList.remove('is-loading'); $('[data-hero]').classList.add('is-in'); }, 350);
+  }
+  critical.forEach(img => {
+    if (img.complete && img.naturalWidth) step();
+    else { img.addEventListener('load', step, { once: true }); img.addEventListener('error', step, { once: true }); }
+  });
+  setTimeout(finish, 4500);
+}
+
+/* ==========================================================
+   LIVE STATUS — Riga time
+   ========================================================== */
+function status() {
+  const el = $('[data-status]'); if (!el) return;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Riga', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
+    .formatToParts(new Date()).map(p => [p.type, p.value]));
+  const h = +parts.hour, open = ['Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const today = parts.weekday, yesterday = { Sun: 'Sat', Mon: 'Sun', Tue: 'Mon', Wed: 'Tue', Thu: 'Wed', Fri: 'Thu', Sat: 'Fri' }[today];
+  const time = `${parts.hour}:${parts.minute}`;
+  let msg;
+  if ((open.includes(today) && h >= 18) || (open.includes(yesterday) && h < 1)) msg = `Riga ${time} · <span style="color:var(--amber)">●</span> Open now`;
+  else if (open.includes(today)) msg = `Riga ${time} · Doors open tonight at 18:00`;
+  else msg = `Riga ${time} · Closed tonight · Opens Tuesday, 18:00`;
+  el.innerHTML = msg;
+}
+
+/* ==========================================================
+   STAGE PROGRESS (smoothed, never hijacks scroll)
+   ========================================================== */
+const stages = $$('[data-stage]').map(el => ({ el, id: el.dataset.stage, top: 0, h: 0, target: 0, p: 0 }));
+function measure() {
+  vw = innerWidth; vh = innerHeight;
+  const y = scrollY;
+  stages.forEach(s => { const r = s.el.getBoundingClientRect(); s.top = r.top + y; s.h = s.el.offsetHeight; });
+}
+function targets() {
+  const y = scrollY;
+  stages.forEach(s => {
+    if (s.id === 'outro') s.target = clamp((y + vh - s.top) / (s.h + vh));
+    else s.target = clamp((y - s.top) / Math.max(1, s.h - vh));
+  });
+}
+
+/* ==========================================================
+   01 ARRIVAL — street → door → room
+   ========================================================== */
+const A = {
+  ext: $('[data-layer="ext"]'), door: $('[data-layer="door"]'), int: $('[data-layer="int"]'),
+  glow: $('[data-layer="glow"]'), shade: $('[data-layer="shade"]'), hero: $('[data-hero]'), inside: $('[data-inside]'),
+};
+let breathe = 0;
+function arrival(p) {
+  const De = coverRect(ART.ext, ART.ext.door);
+  const Dd = coverRect(ART.door, ART.door.door);
+  const C = { x: vw / 2, y: vh * .5 };
+  const Pe = { x: De.cx, y: De.cy };
+
+  if (RM) {                                    // reduced motion: dissolves only
+    A.ext.style.opacity = 1 - map(p, .25, .55);
+    A.door.style.opacity = 0;
+    A.int.style.opacity = map(p, .25, .55); A.int.style.clipPath = 'none';
+    A.hero.style.opacity = 1 - map(p, 0, .15);
+    A.inside.style.opacity = map(p, .65, .8); A.inside.classList.toggle('is-in', p > .6);
+    A.glow.style.opacity = 0;
+    return;
+  }
+
+  // one camera depth for the whole walk-in (log-linear = constant perceived speed)
+  const Zend = Math.max(vw / De.w, vh / De.h) * 1.12;
+  const u = ease(map(p, 0, .84));
+  const Z = Math.pow(Zend, u) * (1 + breathe);
+  const F = { x: lerp(Pe.x, C.x, easeOut(map(p, .05, .7))), y: lerp(Pe.y, C.y, easeOut(map(p, .05, .7))) };
+
+  // exterior — the street
+  A.ext.style.transform = camT(Pe, F, Z);
+  // door — the same door, photographed closer: locked to the exterior door, so the swap is invisible
+  const k = De.h / Dd.h;                         // size ratio between the two photographs' doors
+  A.door.style.transform = camT({ x: Dd.cx, y: Dd.cy }, F, Z * k);
+  const zSwap = 1 / k;                           // the depth at which the close-up is shown at native resolution
+  // swap only once the close-up fully covers the frame (scale ≥ 1), so no edges ever show
+  const zc = Math.max(zSwap, 1.04 / k);
+  A.door.style.opacity = map(Z, zc, zc * 1.3);
+  A.ext.style.opacity = 1 - map(Z, zc * 1.25, zc * 1.4);
+
+  // the doorway becomes the frame of the room
+  const w = De.w * Z, h = De.h * Z;
+  const L = F.x - w / 2, T = F.y - h / 2;
+  const inset = `${T}px ${vw - (L + w)}px ${vh - (T + h)}px ${L}px`;
+  const ry = h * ART.ext.arch;
+  const r = `round ${w / 2}px ${w / 2}px 0 0 / ${ry}px ${ry}px 0 0`;
+  const full = p > .84;
+  A.int.style.clipPath = full ? 'inset(0 0 0 0)' : `inset(${inset} ${r})`;
+  A.int.style.opacity = map(p, .38, .56);
+  const hd = h / vh;                             // the room is further away than the door: it grows more slowly
+  const Zi = full ? 1 + .07 * easeOut(map(p, .84, 1)) : Math.max(.5, Math.min(1, .38 + .62 * hd));
+  A.int.style.transform = camT(C, F, Zi);
+
+  // warmth on the threshold
+  A.glow.style.opacity = .75 * Math.sin(Math.PI * map(p, .5, .95));
+  A.shade.style.opacity = 1 - .35 * map(p, .4, .8) + .35 * map(p, .85, 1);
+
+  // type
+  const ho = 1 - map(p, .01, .12);
+  A.hero.style.opacity = ho;
+  A.hero.style.transform = `translate3d(0, ${-map(p, 0, .15) * 40}px, 0)`;
+  A.hero.style.visibility = ho <= 0 ? 'hidden' : '';
+  const io = map(p, .86, .93) * (1 - map(p, .985, 1) * .0);
+  A.inside.style.opacity = io;
+  A.inside.classList.toggle('is-in', p > .85);
+}
+
+/* ==========================================================
+   03 TABLE → DISH → MENU
+   ========================================================== */
+const T = {
+  cam: $('[data-table-cam]'), shade: $('[data-table-shade]'), label: $('[data-table-label]'),
+  dish: $('[data-dish]'), tilt: $('[data-dish-tilt]'), shadow: $('[data-dish-shadow]'),
+  copy: $('[data-dishcopy]'), open: $('[data-menuopen]'),
+};
+let hero = { w: 600, h: 450 };                    // fixed CSS size of the dish element (= its hero size)
+const PUSH = () => (vw < 961 ? 1.06 : 1.08);      // how far the camera walks toward the table
+function sizeDish() {
+  const R0 = coverRect(ART.table, ART.table.plate);
+  const pr = R0.w / R0.h;
+  let w, h;
+  if (vw < 961) { w = vw * .94; h = w / pr; }      // phone: the plate is isolated and settles into the frame
+  else { h = R0.h * 1.04; w = h * pr; }            // desktop: the plate keeps its size and rises a little
+  hero = { w, h };
+  T.dish.style.width = w + 'px'; T.dish.style.height = h + 'px';
+  dishGL && dishGL.resize(w, h);
+  steam && steam.resize();
+}
+let tilt = { x: 0, y: 0, tx: 0, ty: 0 };
+function table(p, t) {
+  const mobile = vw < 961;
+  const R0 = coverRect(ART.table, ART.table.plate);
+  const P = { x: R0.cx, y: R0.cy };
+  const heroC = mobile ? { x: vw / 2, y: vh * .38 } : { x: vw * .28, y: vh * .5 };
+  const menuC = mobile ? { x: vw * .5, y: vh * .72 } : { x: vw * .73, y: vh * .52 };
+  const menuS = mobile ? .62 : .55;
+
+  // 0 → .1  framed image opens to full bleed
+  const open = easeOut(map(p, 0, .1));
+  const ix = lerp(mobile ? 6 : 16, 0, open), iy = lerp(mobile ? 14 : 13, 0, open);
+  T.cam.style.clipPath = RM ? 'none' : `inset(${iy}vh ${ix}vw ${iy}vh ${ix}vw)`;
+
+  // .04 → .42  the camera walks toward the plate (never uncovering the frame)
+  const a = ease(map(p, .04, .42));
+  const Z = RM ? 1 : lerp(1, PUSH(), a);
+  let tx = lerp(P.x, heroC.x, a) - P.x * Z, ty = lerp(P.y, heroC.y, a) - P.y * Z;
+  tx = clamp(tx, vw - vw * Z, 0); ty = clamp(ty, vh - vh * Z, 0);
+  const F = { x: tx + P.x * Z, y: ty + P.y * Z };
+  T.cam.style.transform = RM ? 'none' : camT(P, F, Z);
+
+  // label
+  const lo = map(p, .015, .06) * (1 - map(p, .14, .2));
+  T.label.style.opacity = lo;
+  T.label.style.transform = `translate3d(0, ${(1 - map(p, .015, .08)) * 24}px, 0)`;
+  T.label.classList.toggle('is-in', p > .015 && p < .2);
+
+  // the room falls away
+  const fall = map(p, .34, .5);
+  T.shade.style.opacity = RM ? map(p, .3, .45) : fall;
+  T.cam.style.filter = fall > 0 && fall < 1 && !RM ? `blur(${fall * 10}px)` : '';
+  T.cam.style.opacity = 1 - map(p, .48, .52);
+
+  // the dish: glued to the photograph, then it lifts and becomes the object
+  const glued = { x: F.x + (R0.x - P.x) * Z, y: F.y + (R0.y - P.y) * Z, w: R0.w * Z, h: R0.h * Z };
+  let rect = glued;
+  const lift = ease(map(p, .38, .6));
+  const go = ease(map(p, .74, .86));
+  if (go > 0) {
+    const w = hero.w * lerp(1.03, menuS, go), h = hero.h * lerp(1.03, menuS, go);
+    const cx = lerp(heroC.x, menuC.x, go), cy = lerp(heroC.y - hero.h * .03, menuC.y, go);
+    rect = { x: cx - w / 2, y: cy - h / 2, w, h };
+  } else if (lift > 0) {
+    // separates from the table: drifts to its place in the frame and rises a few percent toward the viewer
+    const w = lerp(glued.w, hero.w * 1.03, lift), h = lerp(glued.h, hero.h * 1.03, lift);
+    const cx = lerp(glued.x + glued.w / 2, heroC.x, lift), cy = lerp(glued.y + glued.h / 2, heroC.y - hero.h * .03, lift);
+    rect = { x: cx - w / 2, y: cy - h / 2, w, h };
+  }
+  const float = RM ? 0 : Math.sin(t * .0009) * 4 * lift * (1 - go);
+  if (RM) {
+    const k = p < .74 ? 1 : menuS, w = hero.w * k, h = hero.h * k, c = p < .74 ? heroC : menuC;
+    rect = { x: c.x - w / 2, y: c.y - h / 2, w, h };
+  }
+  T.dish.style.transform = `translate3d(${rect.x}px, ${rect.y + float}px, 0) scale(${rect.w / hero.w})`;
+  T.dish.style.opacity = RM ? map(p, .35, .45) : (p > .3 ? 1 : 0);
+  T.shadow.style.opacity = map(p, .36, .52) * .9;
+  T.dish.dataset.live = p > .3 && p < .995 ? '1' : '0';
+
+  // subtle physical response to the cursor (auto-drift on touch)
+  if (!RM) {
+    const idle = !FINE || !pointer.active;
+    const tx = idle ? Math.sin(t * .00045) * .6 : pointer.nx;
+    const ty = idle ? Math.cos(t * .00037) * .4 : pointer.ny;
+    tilt.x = lerp(tilt.x, tx, .06); tilt.y = lerp(tilt.y, ty, .06);
+    const k = lift * (1 - go * .7);
+    T.tilt.style.transform = `perspective(1400px) rotateX(${-tilt.y * 3.2 * k}deg) rotateY(${tilt.x * 4.2 * k}deg)`;
+    dishGL && dishGL.set(tilt.x * k, tilt.y * k, t, lift);
+  }
+
+  // copy
+  const co = map(p, .5, .58) * (1 - map(p, .72, .77));
+  T.copy.style.opacity = co;
+  T.copy.style.transform = mobile ? `translate3d(0, ${(1 - map(p, .5, .6)) * 20}px, 0)` : `translate3d(0, calc(-50% + ${(1 - map(p, .5, .6)) * 20}px), 0)`;
+  T.copy.classList.toggle('is-in', p > .5 && p < .76);
+  T.copy.classList.toggle('is-live', co > .6);
+
+  const mo = map(p, .82, .9);
+  T.open.style.opacity = mo;
+  T.open.classList.toggle('is-in', p > .82);
+
+  steam && steam.active(p > .45 && p < .8 ? lift * (1 - go) : 0);
+}
+
+/* ==========================================================
+   DISH — WebGL depth parallax + moving light
+   One photograph, a hand-built depth map: plate low, food high.
+   Pixels are displaced (never duplicated), so there is no ghosting.
+   ========================================================== */
+let dishGL = null;
+function initDishGL() {
+  if (RM) return;
+  const canvas = $('[data-dish-gl]');
+  const gl = canvas.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
+  if (!gl) return;
+  const vs = `attribute vec2 p; varying vec2 v; void main(){ v = p*.5+.5; v.y = 1.-v.y; gl_Position = vec4(p,0.,1.); }`;
+  const fs = `precision mediump float;
+    varying vec2 v; uniform sampler2D c; uniform sampler2D d; uniform vec2 m; uniform float t; uniform float l; uniform vec2 px;
+    void main(){
+      float dep = texture2D(d, v).r;
+      vec2 off = m * (dep - .42) * .022;
+      vec2 uv = v - off;
+      float dd = texture2D(d, uv).r;
+      uv = v - m * (dd - .42) * .022;
+      vec4 col = texture2D(c, uv);
+      // normal from depth → a soft light that drifts across the glaze and butter
+      float dx = texture2D(d, uv + vec2(px.x*3.,0.)).r - texture2D(d, uv - vec2(px.x*3.,0.)).r;
+      float dy = texture2D(d, uv + vec2(0.,px.y*3.)).r - texture2D(d, uv - vec2(0.,px.y*3.)).r;
+      vec3 n = normalize(vec3(-dx*6., -dy*6., 1.));
+      vec3 L = normalize(vec3(-.45 + sin(t*.00025)*.35 + m.x*.5, -.55 + m.y*.4, .75));
+      float spec = pow(max(dot(reflect(-L, n), vec3(0.,0.,1.)), 0.), 18.);
+      float shade = .94 + .1 * dot(n, L);
+      vec3 rgb = col.rgb * shade + vec3(1., .86, .66) * spec * .16 * col.a * l * smoothstep(.45,.75,dd);
+      gl_FragColor = vec4(rgb, col.a);
+    }`;
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(pr);
+  if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) return;
+  gl.useProgram(pr);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const U = n => gl.getUniformLocation(pr, n);
+  const uc = U('c'), ud = U('d'), um = U('m'), ut = U('t'), ul = U('l'), upx = U('px');
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  const tex = (unit, img) => {
+    const tx = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tx);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  };
+  const load = src => new Promise((res, rej) => { const i = new Image(); i.decoding = 'async'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  let ready = false, iw = 1, ih = 1;
+  const state = { mx: 0, my: 0, t: 0, l: 0, dirty: true };
+  Promise.all([load($('[data-dish-img]').getAttribute('src')), load('assets/web/dish-signature-depth.webp')]).then(([c, d]) => {
+    iw = c.naturalWidth; ih = c.naturalHeight;
+    tex(0, c); tex(1, d); gl.uniform1i(uc, 0); gl.uniform1i(ud, 1);
+    ready = true; T.dish.classList.add('has-gl'); state.dirty = true; draw();
+  }).catch(() => {});
+  function draw() {
+    if (!ready) return;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.uniform2f(um, state.mx, state.my); gl.uniform1f(ut, state.t); gl.uniform1f(ul, state.l);
+    gl.uniform2f(upx, 1 / iw, 1 / ih);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  dishGL = {
+    resize(w, h) { const dpr = Math.min(devicePixelRatio || 1, 2); canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); draw(); },
+    set(mx, my, t, l) {
+      if (T.dish.dataset.live !== '1') return;
+      state.mx = mx; state.my = my; state.t = t; state.l = l; draw();
+    },
+  };
+}
+
+/* ---------- steam: a few soft, slow, almost invisible wisps ---------- */
+let steam = null;
+function initSteam() {
+  if (RM) return;
+  const c = $('[data-dish-steam]'); const x = c.getContext('2d');
+  let W = 0, H = 0, amt = 0, parts = [];
+  const sprite = document.createElement('canvas'); sprite.width = sprite.height = 128;
+  const sx = sprite.getContext('2d'); const g = sx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,246,232,.9)'); g.addColorStop(.5, 'rgba(255,246,232,.25)'); g.addColorStop(1, 'rgba(255,246,232,0)');
+  sx.fillStyle = g; sx.fillRect(0, 0, 128, 128);
+  const spawn = () => ({ x: .36 + Math.random() * .3, y: .78 + Math.random() * .06, r: .05 + Math.random() * .05, life: 0, max: 5000 + Math.random() * 4000, drift: (Math.random() - .5) * .00002, ph: Math.random() * 6.28 });
+  for (let i = 0; i < 16; i++) { const s = spawn(); s.life = Math.random() * s.max; parts.push(s); }
+  let last = 0;
+  steam = {
+    resize() { const r = c.getBoundingClientRect(); const dpr = Math.min(devicePixelRatio || 1, 1.5); W = c.width = Math.max(1, r.width * dpr); H = c.height = Math.max(1, r.height * dpr); },
+    active(a) { amt = a; },
+    tick(t) {
+      const dt = Math.min(50, t - (last || t)); last = t;
+      if (amt <= .01) { if (c.dataset.clear !== '1') { x.clearRect(0, 0, W, H); c.dataset.clear = '1'; } return; }
+      c.dataset.clear = '0';
+      x.clearRect(0, 0, W, H);
+      parts.forEach((s, i) => {
+        s.life += dt; if (s.life > s.max) { parts[i] = spawn(); return; }
+        const k = s.life / s.max;
+        const y = s.y - k * .62;
+        const xx = s.x + Math.sin(s.ph + k * 3.2) * .05 + s.drift * s.life;
+        const r = s.r * (1 + k * 2.6);
+        const a = Math.sin(Math.PI * k) * .032 * amt;
+        x.globalAlpha = a;
+        x.drawImage(sprite, (xx - r) * W, (y - r) * H, r * 2 * W, r * 2 * W);
+      });
+    },
+  };
+}
+
+/* ==========================================================
+   02 THE ROOM — words lit as you read, images revealed
+   ========================================================== */
+const words = [];
+function splitWords() {
+  $$('[data-words]').forEach(el => {
+    const txt = el.textContent.trim().split(/\s+/);
+    el.innerHTML = txt.map(w => `<span class="w">${w}</span>`).join(' ');
+    words.push(el);
+  });
+}
+function lightWords() {
+  words.forEach(el => {
+    const r = el.getBoundingClientRect();
+    const k = clamp((vh * .85 - r.top) / (r.height + vh * .35));
+    const ws = el.children, n = Math.floor(k * ws.length * 1.05);
+    for (let i = 0; i < ws.length; i++) ws[i].classList.toggle('on', i < n);
+  });
+}
+const plates = $$('[data-reveal]');
+function plateParallax() {
+  if (RM) return;
+  plates.forEach(pl => {
+    const r = pl.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > vh) return;
+    const k = (r.top + r.height / 2 - vh / 2) / vh;
+    pl.style.setProperty('--py', `${k * -4}%`);
+  });
+}
+
+/* ==========================================================
+   NIGHT + OUTRO
+   ========================================================== */
+const nightBg = $('[data-night-bg] img'), outroImg = $('[data-outro-img] img'), night = $('#night');
+function nightFx() {
+  if (RM) return;
+  const r = night.getBoundingClientRect();
+  if (r.bottom > 0 && r.top < vh) nightBg.style.transform = `translate3d(0, ${((r.top + r.height / 2) - vh / 2) * -.08}px, 0) scale(1.06)`;
+  const o = stages.find(s => s.id === 'outro');
+  if (o) outroImg.style.transform = `scale(${lerp(1.35, 1.0, easeOut(o.p))})`;   // stepping back into the street
+}
+
+/* ==========================================================
+   CHAPTER INDICATOR + NAV
+   ========================================================== */
+const chapters = $$('[data-chapter-id]');
+const chNum = $('[data-chapter-num]'), chName = $('[data-chapter-name]'), chBar = $('[data-chapter-bar]'), chEl = $('[data-chapter]');
+let lastY = 0;
+const nav = $('[data-nav]');
+function chrome() {
+  const y = scrollY;
+  let cur = chapters[0];
+  for (const c of chapters) if (c.getBoundingClientRect().top <= vh * .5) cur = c;
+  const [n, name] = cur.dataset.chapterId.split('|');
+  if (chNum.textContent !== n) { chNum.textContent = n; chName.textContent = name; }
+  const r = cur.getBoundingClientRect();
+  chBar.parentElement.style.setProperty('--cp', clamp((vh * .5 - r.top) / r.height).toFixed(3));
+  // hide over the dish copy and the hero title (they already speak)
+  const arr = stages[0];
+  chEl.classList.toggle('is-hidden', arr.p < .1 || y > document.documentElement.scrollHeight - vh * 1.4);
+  // nav: out of the way while descending, back when the visitor looks up
+  const dy = y - lastY;
+  if (Math.abs(dy) > 4) { nav.classList.toggle('is-hidden', dy > 0 && y > vh * .4 && !sheetOpen); lastY = y; }
+  nav.classList.toggle('is-solid', y > vh * .2);
+}
+
+/* mobile sheet */
+let sheetOpen = false;
+const sheet = $('[data-sheet]'), toggle = $('[data-sheet-toggle]');
+function setSheet(open) {
+  sheetOpen = open;
+  toggle.setAttribute('aria-expanded', open);
+  if (open) { sheet.hidden = false; requestAnimationFrame(() => sheet.classList.add('is-open')); document.body.style.overflow = 'hidden'; }
+  else { sheet.classList.remove('is-open'); document.body.style.overflow = ''; setTimeout(() => { if (!sheetOpen) sheet.hidden = true; }, 700); }
+}
+toggle.addEventListener('click', () => setSheet(!sheetOpen));
+$$('[data-sheet-close]').forEach(a => a.addEventListener('click', () => setSheet(false)));
+addEventListener('keydown', e => { if (e.key === 'Escape' && sheetOpen) setSheet(false); });
+
+/* in-page links: land on the meaningful frame of a pinned stage */
+function jump(e) {
+  const href = e.currentTarget.getAttribute('href'); if (!href || href[0] !== '#') return;
+  let y = null;
+  const arr = stages.find(s => s.id === 'arrival'), tab = stages.find(s => s.id === 'table');
+  if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) y = arr.top + (arr.h - vh) * .93;   // walk in
+  else if (href === '#menu' && e.currentTarget.hasAttribute('data-to-menu')) y = tab.top + (tab.h - vh) * .93;
+  else if (href === '#top') y = 0;
+  else { const t = $(href); if (t) y = t.getBoundingClientRect().top + scrollY - (href === '#reserve' ? 40 : 0); }
+  if (y == null) return;
+  e.preventDefault();
+  scrollTo({ top: y, behavior: RM ? 'auto' : 'smooth' });
+}
+$$('a[href^="#"]').forEach(a => a.addEventListener('click', jump));
+
+/* ==========================================================
+   04 MENU — one interaction: the plate follows the cursor
+   ========================================================== */
+function menu() {
+  const items = $$('.mi[data-img]');
+  // touch / small screens: a quiet thumbnail inline instead of hover
+  items.forEach(li => {
+    const im = document.createElement('img');
+    im.className = 'mi__thumb'; im.loading = 'lazy'; im.decoding = 'async'; im.alt = ''; im.src = li.dataset.img;
+    li.appendChild(im);
+  });
+  // index highlight
+  const links = $$('[data-mi]');
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) links.forEach(l => l.classList.toggle('is-on', l.getAttribute('href') === '#' + e.target.id));
+  }), { rootMargin: '-45% 0px -50% 0px' });
+  $$('.mcat').forEach(s => io.observe(s));
+
+  if (!FINE) return;
+  const peek = $('[data-peek]'), pimg = $('img', peek);
+  let on = false, px = 0, py = 0, cx = 0, cy = 0;
+  items.forEach(li => {
+    li.addEventListener('mouseenter', () => { pimg.src = li.dataset.img; on = true; peek.classList.add('is-on'); });
+    li.addEventListener('mouseleave', () => { on = false; peek.classList.remove('is-on'); });
+  });
+  addEventListener('mousemove', e => { px = e.clientX; py = e.clientY; }, { passive: true });
+  const loop = () => {
+    cx = lerp(cx, px + 250, .12); cy = lerp(cy, py - 10, .12);
+    peek.style.transform = `translate3d(${cx}px, ${cy}px, 0) translate(-50%, -50%) scale(${on ? 1 : .85}) rotate(${(px + 250 - cx) * .02}deg)`;
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+/* ==========================================================
+   05 RESERVATION (concept — nothing is booked)
+   ========================================================== */
+function reservation() {
+  const form = $('[data-res]'); if (!form) return;
+  const dates = $('[data-dates]'), times = $('[data-times]'), out = $('[data-guests-out]'), done = $('[data-res-done]');
+  let guests = 2, date = null, time = null;
+  const fmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Riga' });
+  const now = new Date();
+  const seeded = n => { const s = Math.sin(n * 9301 + 49297) * 233280; return s - Math.floor(s); };
+  let firstOpen = null;
+  for (let i = 0; i < 16; i++) {
+    const d = new Date(now); d.setDate(now.getDate() + i);
+    const wd = d.getDay(); const closed = wd === 0 || wd === 1;
+    const [w, dm] = (() => { const p = fmt.formatToParts(d); const g = t => (p.find(x => x.type === t) || {}).value; return [g('weekday'), `${g('day')} ${g('month')}`]; })();
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.setAttribute('role', 'radio');
+    b.innerHTML = `<small>${i === 0 ? 'Tonight' : i === 1 ? 'Tomorrow' : w}</small>${dm}`;
+    b.setAttribute('aria-checked', 'false'); b.disabled = closed; if (closed) b.title = 'Closed Sundays and Mondays';
+    b.dataset.v = `${w} ${dm}`; b.dataset.seed = d.getDate() + d.getMonth() * 31;
+    dates.appendChild(b);
+    if (!closed && !firstOpen) firstOpen = b;
+  }
+  const slots = ['18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00', '21:30', '22:00', '22:30'];
+  function renderTimes(seed) {
+    times.innerHTML = '';
+    slots.forEach((s, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.setAttribute('role', 'radio'); b.textContent = s;
+      b.disabled = seeded(seed * 13 + i) < .22; b.setAttribute('aria-checked', 'false'); b.dataset.v = s;
+      times.appendChild(b);
+    });
+    time = null;
+    const pref = $$('.chip:not(:disabled)', times).find(b => b.dataset.v === '20:00') || $('.chip:not(:disabled)', times);
+    pref && pick(times, pref);
+  }
+  function pick(group, b) {
+    $$('.chip', group).forEach(c => c.setAttribute('aria-checked', c === b ? 'true' : 'false'));
+    if (group === dates) { date = b.dataset.v; renderTimes(+b.dataset.seed); } else time = b.dataset.v;
+  }
+  dates.addEventListener('click', e => { const b = e.target.closest('.chip'); if (b && !b.disabled) pick(dates, b); });
+  times.addEventListener('click', e => { const b = e.target.closest('.chip'); if (b && !b.disabled) pick(times, b); });
+  $$('[data-guests]').forEach(b => b.addEventListener('click', () => { guests = clamp(guests + +b.dataset.guests, 1, 8); out.textContent = guests; }));
+  firstOpen && pick(dates, firstOpen);
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const name = form.name.value.trim();
+    if (!name) { form.name.focus(); form.name.placeholder = 'A name for the table'; return; }
+    done.hidden = false;
+    done.innerHTML = `Thank you, ${name.replace(/[<>&"]/g, '')}. A table for ${guests}, ${date} at ${time}.<small>Vesper is a concept — no reservation has been made.</small>`;
+  });
+}
+
+/* ==========================================================
+   POINTER
+   ========================================================== */
+const pointer = { nx: 0, ny: 0, active: false };
+addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
+  pointer.nx = (e.clientX / vw) * 2 - 1; pointer.ny = (e.clientY / vh) * 2 - 1; pointer.active = true;
+}, { passive: true });
+document.addEventListener('mouseleave', () => { pointer.active = false; });
+
+/* ==========================================================
+   LOOP
+   ========================================================== */
+let lastT = 0;
+function frame(t) {
+  const dt = Math.min(64, t - (lastT || t)); lastT = t;
+  targets();
+  const k = RM ? 1 : 1 - Math.exp(-dt / 110);          // gentle inertia, ~0.1s
+  stages.forEach(s => { s.p += (s.target - s.p) * k; if (Math.abs(s.target - s.p) < .0001) s.p = s.target; });
+  const arr = stages.find(s => s.id === 'arrival'), tab = stages.find(s => s.id === 'table');
+  breathe = RM ? 0 : (1 - map(arr.p, 0, .08)) * (Math.sin(t * .00035) * .5 + .5) * .012;
+  const inView = s => scrollY + vh > s.top - vh && scrollY < s.top + s.h + vh;
+  if (inView(arr)) arrival(arr.p);
+  if (inView(tab)) table(tab.p, t);
+  steam && inView(tab) && steam.tick(t);
+  lightWords(); plateParallax(); nightFx(); chrome();
+  requestAnimationFrame(frame);
+}
+
+/* reveal-on-enter */
+const rio = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('is-in'); rio.unobserve(e.target); } }), { threshold: .18 });
+$$('[data-reveal], .night__head, .outro__copy').forEach(el => rio.observe(el));
+
+function resize() { measure(); sizeDish(); }
+addEventListener('resize', () => { resize(); }, { passive: true });
+addEventListener('load', resize);
+
+/* ---------- go ---------- */
+splitWords(); status(); setInterval(status, 30000);
+initDishGL(); initSteam();
+measure(); sizeDish(); menu(); reservation(); boot();
+requestAnimationFrame(frame);
+
+})();

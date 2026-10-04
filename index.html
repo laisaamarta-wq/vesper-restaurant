@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vesper — Evening Dining, Riga</title>
+<meta name="description" content="Vesper is an evening restaurant in a 19th-century stone house in Riga's Old Town. Baltic produce, a wood hearth, a long vaulted room. Reserve a table.">
+<meta name="theme-color" content="#0e0c0a">
+<meta property="og:title" content="Vesper — Evening Dining, Riga">
+<meta property="og:description" content="Twelve tables under a limewashed vault. A wood hearth. Dinner begins after dark.">
+<meta property="og:image" content="assets/web/og.jpg">
+<link rel="icon" href="assets/web/favicon.svg" type="image/svg+xml">
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/instrument-serif-latin-400-normal.woff2" crossorigin>
+<link rel="stylesheet" href="fonts.css">
+<link rel="preload" as="image" href="assets/web/exterior-blue-hour-1920.webp" imagesrcset="assets/web/exterior-blue-hour-960.webp 960w, assets/web/exterior-blue-hour-1920.webp 1920w, assets/web/exterior-blue-hour-2880.webp 2880w" imagesizes="100vw" fetchpriority="high">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="is-loading">
+
+<!-- ============ LOADER ============ -->
+<div class="loader" aria-hidden="true">
+  <div class="loader__mark">Vesper</div>
+  <div class="loader__line"><span></span></div>
+  <div class="loader__meta">Evening dining · Riga</div>
+</div>
+
+<!-- ============ NAV ============ -->
+<header class="nav" data-nav>
+  <a class="nav__brand" href="#top" aria-label="Vesper, back to the street">Vesper</a>
+  <nav class="nav__links" aria-label="Primary">
+    <a href="#room">The Room</a>
+    <a href="#menu">Menu</a>
+    <a href="#night">The Night</a>
+  </nav>
+  <a class="nav__cta" href="#reserve">Reserve a table <span aria-hidden="true">→</span></a>
+  <button class="nav__toggle" type="button" aria-expanded="false" aria-controls="sheet" data-sheet-toggle>
+    <span class="sr-only">Open menu</span><i></i><i></i>
+  </button>
+</header>
+
+<div class="sheet" id="sheet" data-sheet hidden>
+  <nav aria-label="Mobile">
+    <a href="#top" data-sheet-close><small>01</small>The Street</a>
+    <a href="#room" data-sheet-close><small>02</small>The Room</a>
+    <a href="#table" data-sheet-close><small>03</small>The Table</a>
+    <a href="#menu" data-sheet-close><small>04</small>The Menu</a>
+    <a href="#night" data-sheet-close><small>05</small>The Night</a>
+  </nav>
+  <a class="btn-line" href="#reserve" data-sheet-close>Reserve a table <span aria-hidden="true">→</span></a>
+  <p class="sheet__meta">Old Town, Riga · Tue–Sat · 18:00 until late</p>
+</div>
+
+<!-- chapter indicator (spatial navigation) -->
+<aside class="chapter" aria-hidden="true" data-chapter>
+  <span class="chapter__num" data-chapter-num>01</span>
+  <span class="chapter__rule"><i data-chapter-bar></i></span>
+  <span class="chapter__name" data-chapter-name>The Street</span>
+</aside>
+
+<main id="top">
+
+<!-- ============ 01 ARRIVAL — street → door → room ============ -->
+<section class="stage stage--arrival" id="arrival" data-stage="arrival" data-chapter-id="01|The Street" aria-label="Arriving at Vesper">
+  <div class="stage__pin">
+    <div class="cam" data-arrival-cam>
+      <div class="layer layer--ext" data-layer="ext">
+        <img src="assets/web/exterior-blue-hour-1920.webp"
+             srcset="assets/web/exterior-blue-hour-960.webp 960w, assets/web/exterior-blue-hour-1920.webp 1920w, assets/web/exterior-blue-hour-2880.webp 2880w"
+             sizes="100vw" alt="Vesper at blue hour: a pale limestone house on a cobbled Old Town street, warm light behind a tall arched glass door." fetchpriority="high" decoding="async">
+      </div>
+      <div class="layer layer--door" data-layer="door">
+        <img src="assets/web/entrance-door-1920.webp"
+             srcset="assets/web/entrance-door-1280.webp 1280w, assets/web/entrance-door-1920.webp 1920w, assets/web/entrance-door-2880.webp 2880w, assets/web/entrance-door-3840.webp 3840w"
+             sizes="(min-width: 761px) 160vw, 300vw" alt="" decoding="async">
+      </div>
+      <div class="layer layer--int" data-layer="int">
+        <img src="assets/web/interior-main-1920.webp"
+             srcset="assets/web/interior-main-960.webp 960w, assets/web/interior-main-1920.webp 1920w, assets/web/interior-main-2880.webp 2880w"
+             sizes="100vw" alt="Inside: a long limewashed brick vault, oak tables, olive leather banquette, bronze pendant lights and a travertine bar at the far end." decoding="async">
+      </div>
+      <div class="glow" data-layer="glow"></div>
+      <div class="shade" data-layer="shade"></div>
+    </div>
+
+    <div class="hero" data-hero>
+      <div class="hero__top">
+        <p class="meta" data-status>Riga · Open tonight from 18:00</p>
+      </div>
+      <h1 class="hero__title"><span class="line"><span>Vesper</span></span></h1>
+      <div class="hero__row">
+        <p class="meta">Evening dining<br>Old Town / Riga</p>
+        <a class="hero__enter" href="#room" data-enter>
+          <span>Enter</span>
+          <i aria-hidden="true"></i>
+        </a>
+        <p class="meta meta--right">Tue — Sat<br>18:00 until late</p>
+      </div>
+    </div>
+
+    <div class="inside" data-inside>
+      <p class="meta">02 — The Room</p>
+      <h2 class="display"><span class="line"><span>After dark,</span></span><span class="line"><span><em>dinner begins here.</em></span></span></h2>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 02 THE ROOM — ambience ============ -->
+<section class="room" id="room" data-chapter-id="02|The Room" aria-labelledby="room-title">
+  <div class="room__intro wrap">
+    <p class="meta">02 — The Room</p>
+    <h2 class="statement" id="room-title" data-words>Twelve oak tables under a limewashed vault. A travertine bar. A hearth that is lit at four and left to burn down slowly through the night.</h2>
+  </div>
+
+  <div class="spread wrap">
+    <figure class="plate plate--a" data-reveal>
+      <div class="plate__img"><img loading="lazy" decoding="async"
+        src="assets/web/bar-1200.webp" srcset="assets/web/bar-800.webp 800w, assets/web/bar-1200.webp 1200w, assets/web/bar-1800.webp 1800w"
+        sizes="(max-width: 760px) 92vw, 46vw" alt="The travertine bar under backlit bronze shelves, a single cocktail on the stone."></div>
+      <figcaption>
+        <p class="meta">The Bar</p>
+        <p>Low light, natural wine from small growers and a short list of stirred drinks. The counter is kept for walk-ins.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="plate plate--b" data-reveal>
+      <div class="plate__img"><img loading="lazy" decoding="async"
+        src="assets/web/kitchen-hearth-1200.webp" srcset="assets/web/kitchen-hearth-800.webp 800w, assets/web/kitchen-hearth-1200.webp 1200w, assets/web/kitchen-hearth-1800.webp 1800w"
+        sizes="(max-width: 760px) 92vw, 38vw" alt="A cook's hands placing dill on a plate at the pass, the wood hearth glowing behind."></div>
+      <figcaption>
+        <p class="meta">The Hearth</p>
+        <p>Birch, alder and apple wood. Almost everything we cook passes the fire — briefly, or for hours.</p>
+      </figcaption>
+    </figure>
+  </div>
+
+  <div class="facts wrap" data-reveal-text>
+    <div><p class="meta">Seats</p><p class="facts__v">38</p></div>
+    <div><p class="meta">Kitchen</p><p class="facts__v">Baltic, over fire</p></div>
+    <div><p class="meta">Cellar</p><p class="facts__v">220 wines</p></div>
+    <div><p class="meta">Last orders</p><p class="facts__v">22:30</p></div>
+  </div>
+</section>
+
+<!-- ============ 03 THE TABLE → THE DISH → THE MENU ============ -->
+<section class="stage stage--table" id="table" data-stage="table" data-chapter-id="03|The Table" aria-label="The signature dish">
+  <div class="stage__pin">
+    <div class="tcam" data-table-cam>
+      <img class="tcam__img" data-table-img
+        src="assets/web/table-signature-1920.webp"
+        srcset="assets/web/table-signature-960.webp 960w, assets/web/table-signature-1920.webp 1920w, assets/web/table-signature-2880.webp 2880w"
+        sizes="100vw" alt="A table by candlelight: roasted Baltic cod in brown butter on a speckled stoneware plate, a glass of white wine beside it." loading="lazy" decoding="async">
+    </div>
+    <div class="tshade" data-table-shade></div>
+
+    <p class="tlabel" data-table-label><span class="meta">03 — The Table</span><span class="display display--s"><em>And then,</em> the plate.</span></p>
+
+    <!-- the dish: lifted out of the same photograph -->
+    <div class="dish" data-dish aria-hidden="true">
+      <div class="dish__shadow" data-dish-shadow></div>
+      <div class="dish__tilt" data-dish-tilt>
+        <canvas class="dish__gl" data-dish-gl></canvas>
+        <img class="dish__img" data-dish-img src="assets/web/dish-signature.webp" alt="" decoding="async" loading="lazy">
+        <canvas class="dish__steam" data-dish-steam></canvas>
+      </div>
+    </div>
+
+    <div class="dishcopy" data-dishcopy>
+      <p class="meta"><span>No. 07</span><span>From the sea</span></p>
+      <h2 class="dishcopy__title"><span class="line"><span>Baltic cod</span></span><span class="line"><span><em>brown butter, charred leek</em></span></span></h2>
+      <p class="dishcopy__desc">Line-caught off the Kurzeme coast, roasted in its own crust, finished at the hearth and dressed with butter taken to hazelnut.</p>
+      <ul class="dishcopy__tags"><li>Cod</li><li>Brown butter</li><li>Leek</li><li>Dill oil</li><li>Smoked salt</li></ul>
+      <a class="btn-line" href="#menu" data-to-menu>View the menu <span aria-hidden="true">→</span></a>
+    </div>
+
+    <div class="menuopen" data-menuopen>
+      <p class="meta">04 — The Menu · Autumn</p>
+      <h2 class="display"><span class="line"><span>The Menu</span></span></h2>
+      <div class="menuopen__feat">
+        <p class="meta">Tonight's signature</p>
+        <p class="menuopen__name">Baltic cod, brown butter, charred leek</p>
+        <p class="menuopen__price">€32</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 04 THE MENU ============ -->
+<section class="menu" id="menu" data-chapter-id="04|The Menu" aria-labelledby="menu-title">
+  <h2 class="sr-only" id="menu-title">Menu</h2>
+  <div class="menu__grid wrap">
+    <nav class="menu__index" aria-label="Menu sections">
+      <a href="#m-begin" data-mi>To begin</a>
+      <a href="#m-sea" data-mi>From the sea</a>
+      <a href="#m-land" data-mi>From the land</a>
+      <a href="#m-sweet" data-mi>Sweet</a>
+      <a href="#m-bar" data-mi>The bar</a>
+      <p class="menu__note">Served from 18:00.<br>Seven-course tasting menu<br>€95 · with wines €150</p>
+    </nav>
+
+    <div class="menu__lists" data-menu>
+      <section class="mcat" id="m-begin" aria-labelledby="h-begin">
+        <header class="mcat__head"><h3 id="h-begin">To begin</h3><span class="meta">I</span></header>
+        <ul>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Rye sourdough, cultured butter</span><span class="mi__price">6</span></div><p class="mi__desc">Baked each afternoon, smoked salt</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Oysters, sea-buckthorn mignonette</span><span class="mi__price">4.5</span></div><p class="mi__desc">Each · ask for today's origin</p></li>
+          <li class="mi" data-img="assets/web/dish-beetroot-thumb.webp"><div class="mi__row"><span class="mi__name">Wood-roasted beetroot</span><span class="mi__price">14</span></div><p class="mi__desc">Whipped smoked curd, toasted rye, sorrel</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Cured trout, cucumber</span><span class="mi__price">16</span></div><p class="mi__desc">Horseradish cream, dill, buttermilk</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Chanterelles on toast</span><span class="mi__price">15</span></div><p class="mi__desc">Confit egg yolk, thyme, brown butter</p></li>
+        </ul>
+      </section>
+
+      <section class="mcat" id="m-sea" aria-labelledby="h-sea">
+        <header class="mcat__head"><h3 id="h-sea">From the sea</h3><span class="meta">II</span></header>
+        <ul>
+          <li class="mi mi--feat" data-img="assets/web/dish-signature-thumb.webp">
+            <div class="mi__row"><span class="mi__name">Baltic cod, brown butter, charred leek</span><span class="mi__price">32</span></div>
+            <p class="mi__desc">Line-caught cod, dill oil, smoked salt · <em>tonight's signature</em></p>
+          </li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Hearth-grilled langoustines</span><span class="mi__price">38</span></div><p class="mi__desc">Garlic butter, lemon, grilled sourdough</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Pike-perch, mussels</span><span class="mi__price">30</span></div><p class="mi__desc">Saffron and fennel broth, potato, lovage</p></li>
+        </ul>
+      </section>
+
+      <section class="mcat" id="m-land" aria-labelledby="h-land">
+        <header class="mcat__head"><h3 id="h-land">From the land</h3><span class="meta">III</span></header>
+        <ul>
+          <li class="mi" data-img="assets/web/dish-duck-thumb.webp"><div class="mi__row"><span class="mi__name">Duck breast, sea buckthorn</span><span class="mi__price">34</span></div><p class="mi__desc">Celeriac, charred onion, duck jus</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Aged beef rib, for two</span><span class="mi__price">46</span></div><p class="mi__desc">Per person · bone marrow, ember onions, horseradish</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Pumpkin, hazelnut, sage</span><span class="mi__price">24</span></div><p class="mi__desc">Roasted in the hearth, brown butter, aged cheese</p></li>
+        </ul>
+      </section>
+
+      <section class="mcat" id="m-sweet" aria-labelledby="h-sweet">
+        <header class="mcat__head"><h3 id="h-sweet">Sweet</h3><span class="meta">IV</span></header>
+        <ul>
+          <li class="mi" data-img="assets/web/dish-dessert-thumb.webp"><div class="mi__row"><span class="mi__name">Burnt honey custard</span><span class="mi__price">12</span></div><p class="mi__desc">Sour cream ice, rye crumble, sea buckthorn</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Dark chocolate, cherries</span><span class="mi__price">13</span></div><p class="mi__desc">Smoked salt, cherry-stone cream</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Baltic cheeses</span><span class="mi__price">14</span></div><p class="mi__desc">Rye crackers, quince, walnuts</p></li>
+        </ul>
+      </section>
+
+      <section class="mcat" id="m-bar" aria-labelledby="h-bar">
+        <header class="mcat__head"><h3 id="h-bar">The bar</h3><span class="meta">V</span></header>
+        <ul>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Vesper Old Fashioned</span><span class="mi__price">14</span></div><p class="mi__desc">Rye, birch syrup, walnut bitters</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Sea-buckthorn spritz</span><span class="mi__price">12</span></div><p class="mi__desc">Dry vermouth, sea buckthorn, soda</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Black balsam &amp; tonic</span><span class="mi__price">11</span></div><p class="mi__desc">Riga's herbal bitter, lemon peel</p></li>
+          <li class="mi"><div class="mi__row"><span class="mi__name">Natural wine by the glass</span><span class="mi__price">from 9</span></div><p class="mi__desc">Ten open bottles, changing nightly</p></li>
+        </ul>
+      </section>
+    </div>
+  </div>
+  <div class="menu__peek" data-peek aria-hidden="true"><img alt=""></div>
+</section>
+
+<!-- ============ 05 THE NIGHT — reservation ============ -->
+<section class="night" id="night" data-chapter-id="05|The Night" aria-labelledby="night-title">
+  <div class="night__bg" data-night-bg>
+    <img loading="lazy" decoding="async" src="assets/web/table-candle-detail-1920.webp"
+      srcset="assets/web/table-candle-detail-960.webp 960w, assets/web/table-candle-detail-1920.webp 1920w"
+      sizes="100vw" alt="">
+  </div>
+  <div class="night__inner wrap" id="reserve">
+    <div class="night__head">
+      <p class="meta">05 — The Night</p>
+      <h2 class="display" id="night-title"><span class="line"><span>Stay for</span></span><span class="line"><span><em>the evening.</em></span></span></h2>
+      <p class="night__lede">We keep twelve tables and a counter for walk-ins. Tables are held for two and a half hours — longer, if the night asks for it.</p>
+    </div>
+
+    <form class="res" data-res novalidate>
+      <fieldset class="res__f">
+        <legend class="meta">Date</legend>
+        <div class="chips chips--dates" data-dates role="radiogroup" aria-label="Choose a date"></div>
+      </fieldset>
+      <fieldset class="res__f">
+        <legend class="meta">Time</legend>
+        <div class="chips" data-times role="radiogroup" aria-label="Choose a time"></div>
+      </fieldset>
+      <div class="res__row">
+        <fieldset class="res__f">
+          <legend class="meta">Guests</legend>
+          <div class="stepper">
+            <button type="button" data-guests="-1" aria-label="Fewer guests">−</button>
+            <output data-guests-out aria-live="polite">2</output>
+            <button type="button" data-guests="1" aria-label="More guests">+</button>
+          </div>
+        </fieldset>
+        <label class="res__f res__name">
+          <span class="meta">Name</span>
+          <input type="text" name="name" autocomplete="name" placeholder="Your name" required>
+        </label>
+      </div>
+      <button class="btn-line btn-line--lg" type="submit">Reserve a table <span aria-hidden="true">→</span></button>
+      <p class="res__done" data-res-done hidden></p>
+    </form>
+  </div>
+</section>
+
+<!-- ============ OUTRO — leaving into the street ============ -->
+<section class="outro" data-stage="outro" aria-label="Good night">
+  <div class="outro__img" data-outro-img>
+    <img loading="lazy" decoding="async" src="assets/web/exterior-blue-hour-1920.webp"
+      srcset="assets/web/exterior-blue-hour-960.webp 960w, assets/web/exterior-blue-hour-1920.webp 1920w" sizes="100vw" alt="">
+  </div>
+  <div class="outro__copy wrap">
+    <p class="display display--xl"><em>Good night.</em></p>
+  </div>
+  <footer class="foot wrap">
+    <div><p class="foot__brand">Vesper</p><p class="meta">Evening dining · Old Town, Riga</p></div>
+    <div><p class="meta">Hours</p><p>Tuesday — Saturday<br>Kitchen 18:00 — 22:30<br>Bar until 01:00</p></div>
+    <div><p class="meta">Find us</p><p>Old Town, Riga<br>Latvia</p></div>
+    <div><a class="btn-line" href="#reserve">Reserve a table <span aria-hidden="true">→</span></a></div>
+    <p class="foot__credit meta">Concept website — art direction, UX/UI &amp; imagery by Marta Jakovleva. Vesper is a fictional restaurant.</p>
+  </footer>
+</section>
+
+</main>
+
+<script src="main.js" defer></script>
+</body>
+</html>
