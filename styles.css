@@ -130,7 +130,7 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
   position:fixed;left:var(--gutter);bottom:26px;z-index:40;
   display:flex;align-items:center;gap:14px;
   font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);
-  mix-blend-mode:normal;transition:opacity .8s;
+  mix-blend-mode:normal;transition:opacity .8s;pointer-events:none;
 }
 .chapter__num{color:var(--cream);font-variant-numeric:tabular-nums}
 .chapter__rule{width:56px;height:1px;background:var(--cream-faint);position:relative;overflow:hidden}
