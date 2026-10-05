@@ -45,9 +45,11 @@ behance.net → «Поделиться работой» → «Опубликов
 | 28 | **Текст** | Кликабельные ссылки, см. ниже |
 
 ## 4. Последний модуль: «Текст»
-По центру, с засечками, цвет **#EDE6DA**:
+Сразу под 27_cta, по центру, шрифт Helvetica/Arial, **11 px**, ЗАГЛАВНЫЕ, цвет **#B9AE9F** — маленькие аккуратные ссылки (адреса не печатаются, только кликабельные слова):
 
-**Email ↗** → `mailto:laisaa.marta@gmail.com`  ·  **WhatsApp ↗** → `https://wa.me/37128203044`  ·  **Live website ↗** → `https://vesper-riga.vercel.app`
+EMAIL ↗ → `mailto:laisaa.marta@gmail.com`  ·  WHATSAPP ↗ → `https://wa.me/37128203044`  ·  WEBSITE ↗ → `https://vesper-riga.vercel.app`
+
+> Все GIF — 1200 px по ширине и ≤ ~10 МБ (рекомендация Behance): так они загружаются и в мобильном приложении.
 
 ## 5. Обложка
 `00_cover.jpg` (1616×1264, точный формат обложки Behance).
