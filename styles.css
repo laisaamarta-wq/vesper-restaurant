@@ -173,7 +173,7 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
   font-size:clamp(88px, 17vw, 300px);line-height:.8;letter-spacing:-.025em;
 }
 .hero__row{display:grid;grid-template-columns:1fr auto 1fr;align-items:end;margin-top:28px;padding-bottom:30px}
-.hero__enter{display:flex;flex-direction:column;align-items:center;gap:12px;font-size:11px;letter-spacing:.24em;text-transform:uppercase}
+.hero__enter{display:flex;flex-direction:column;align-items:center;gap:12px;font-size:11px;letter-spacing:.24em;text-transform:uppercase;-webkit-tap-highlight-color:transparent}
 .hero__enter i{display:block;width:1px;height:46px;background:linear-gradient(var(--cream),rgba(237,230,218,0));transform-origin:top;animation:cue 2.8s var(--ease) infinite}
 @keyframes cue{0%{transform:scaleY(0);opacity:1}55%{transform:scaleY(1);opacity:1}100%{transform:scaleY(1);opacity:0}}
 
@@ -289,6 +289,35 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
 .menu__peek img{width:100%;height:100%;object-fit:cover}
 .menu__peek.is-on{opacity:1}
 
+/* touch: as you pass a dish, the room shows it to you — one floating photograph at a time.
+   It lives in its own layer inside the list, so the menu never reflows. */
+.menu__lists{position:relative}
+.dishfloat{
+  position:absolute;right:0;top:0;z-index:4;pointer-events:none;
+  width:min(46vw,230px);aspect-ratio:4/5;will-change:transform;
+  transform:translate3d(0,var(--py,0px),0);
+}
+.dishfloat__in{
+  width:100%;height:100%;overflow:hidden;border-radius:2px;
+  box-shadow:0 26px 60px rgba(0,0,0,.55);background:var(--black);
+  opacity:0;visibility:hidden;transform:translate3d(0,22px,0) scale(.94);
+  transition:opacity .55s var(--ease),transform .9s var(--ease),visibility 0s .9s;
+}
+.dishfloat img{display:block;width:100%;height:100%;object-fit:cover;transform:scale(1.1);transition:transform 1.6s var(--ease-out)}
+.dishfloat.is-on .dishfloat__in{
+  opacity:1;visibility:visible;transform:none;
+  transition:opacity .9s var(--ease) .08s,transform 1.2s var(--ease-out) .08s,visibility 0s;
+}
+.dishfloat.is-on img{transform:scale(1)}
+.dishfloat.is-out .dishfloat__in{transform:translate3d(0,-26px,0) scale(.98)}
+@media (prefers-reduced-motion: reduce){
+  .dishfloat{transform:none}
+  .dishfloat__in,.dishfloat.is-out .dishfloat__in{transform:none;transition:opacity .6s ease,visibility 0s .6s}
+  .dishfloat.is-on .dishfloat__in{transform:none;transition:opacity .6s ease,visibility 0s}
+  .dishfloat img{transform:none;transition:none}
+}
+
+
 /* ==========================================================
    05 NIGHT / RESERVATION
    ========================================================== */
@@ -324,7 +353,23 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
 }
 .res__name input::placeholder{color:rgba(237,230,218,.3)}
 .res__name input:focus{outline:none;border-color:var(--amber)}
-.res .btn-line{justify-self:start}
+/* browser autofill: keep the field exactly as if the name had been typed.
+   Chrome/Safari force a light background + dark text with !important, so the
+   change is parked behind a transition delay that never elapses, and the text
+   colour is pinned with -webkit-text-fill-color. Firefox only adds a filter. */
+.res__name input{transition:background-color 0s 600000s,color 0s 600000s}
+.res__name input:-webkit-autofill,
+.res__name input:-webkit-autofill:hover,
+.res__name input:-webkit-autofill:focus,
+.res__name input:-webkit-autofill:active{
+  -webkit-text-fill-color:var(--cream);caret-color:var(--cream);
+  -webkit-box-shadow:0 0 0 0 transparent inset;box-shadow:none;
+  background-color:transparent;background-image:none;
+  transition:background-color 0s 600000s,color 0s 600000s;
+  font-family:var(--serif);font-size:24px;
+}
+.res__name input:-webkit-autofill:focus{border-color:var(--amber)}
+.res__name input:autofill{background-color:transparent;background-image:none;filter:none;color:var(--cream);-webkit-text-fill-color:var(--cream)}.res .btn-line{justify-self:start}
 .res__done{margin:0;font-family:var(--serif);font-size:24px;line-height:1.3}
 .res__done small{display:block;font-family:var(--sans);font-size:12px;color:var(--cream-dim);margin-top:8px}
 
@@ -383,15 +428,10 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
   .chapter{bottom:16px}
   .stage--arrival{height:320vh}
   .stage--table{height:250vh}
-  .mi[data-img]{display:grid;grid-template-columns:1fr 64px;gap:0 16px;align-items:start}
-  .mi[data-img] .mi__name::after{display:none}
-  .mi[data-img]>*{grid-column:1}
-  .mi__thumb{grid-column:2 !important;grid-row:1 / span 2;width:64px;aspect-ratio:4/5;object-fit:cover;border-radius:1px}
   .mi--feat::before{display:none}
   .foot{grid-template-columns:1fr}
   .res__row{grid-template-columns:1fr}
 }
-@media (min-width: 761px){ .mi__thumb{display:none} }
 
 /* ==========================================================
    REDUCED MOTION — no camera moves, simple fades only
