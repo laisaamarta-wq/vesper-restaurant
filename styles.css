@@ -142,7 +142,7 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
    ========================================================== */
 .stage{position:relative}
 .stage__pin{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;background:var(--black)}
-.stage--arrival{height:380vh}
+.stage--arrival{height:460vh}
 .stage--table{height:300vh}
 
 .cam,.layer,.tcam{position:absolute;inset:0}
@@ -426,7 +426,7 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
   .hero__enter{grid-column:1/-1;grid-row:1}
   .hero__title{font-size:clamp(84px, 27vw, 160px)}
   .chapter{bottom:16px}
-  .stage--arrival{height:320vh}
+  .stage--arrival{height:380vh}
   .stage--table{height:250vh}
   .mi--feat::before{display:none}
   .foot{grid-template-columns:1fr}

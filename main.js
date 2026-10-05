@@ -103,7 +103,12 @@ const A = {
   glow: $('[data-layer="glow"]'), shade: $('[data-layer="shade"]'), hero: $('[data-hero]'), inside: $('[data-inside]'),
 };
 let breathe = 0;
-function arrival(p) {
+// The walk-in uses the first part of the stage; what's left is a held breath inside the room,
+// so the interior is given time to be seen before the page moves on.
+const WALK = .78;
+function arrival(raw) {
+  const hold = map(raw, WALK, 1);
+  const p = Math.min(1, raw / WALK);
   const De = coverRect(ART.ext, ART.ext.door);
   const Dd = coverRect(ART.door, ART.door.door);
   const C = { x: vw / 2, y: vh * .5 };
@@ -146,7 +151,7 @@ function arrival(p) {
   A.int.style.clipPath = full ? 'inset(0 0 0 0)' : `inset(${inset} ${r})`;
   A.int.style.opacity = map(p, .38, .56);
   const hd = h / vh;                             // the room is further away than the door: it grows more slowly
-  const Zi = full ? 1 + .07 * easeOut(map(p, .84, 1)) : Math.max(.5, Math.min(1, .38 + .62 * hd));
+  const Zi = full ? (1 + .07 * easeOut(map(p, .84, 1))) * (1 + .035 * ease(hold)) : Math.max(.5, Math.min(1, .38 + .62 * hd));   // in the hold: a slow last step into the room
   A.int.style.transform = camT(C, F, Zi);
 
   // warmth on the threshold
@@ -462,7 +467,7 @@ function jump(e) {
   const href = e.currentTarget.getAttribute('href'); if (!href || href[0] !== '#') return;
   let y = null;
   const arr = stages.find(s => s.id === 'arrival'), tab = stages.find(s => s.id === 'table');
-  if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) y = arr.top + (arr.h - vh) * .93;   // walk in
+  if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) y = arr.top + (arr.h - vh) * .93 * WALK;   // walk in
   else if (href === '#menu' && e.currentTarget.hasAttribute('data-to-menu')) y = tab.top + (tab.h - vh) * .9;
   else if (href === '#top') y = 0;
   else { const t = $(href); if (t) y = t.getBoundingClientRect().top + scrollY - (href === '#reserve' ? 40 : 0); }
@@ -470,7 +475,7 @@ function jump(e) {
   e.preventDefault();
   // touch: ENTER walks the same camera path as a scroll would, at walking pace —
   // it drives the page through the arrival timeline instead of the browser's quick smooth-scroll
-  if (!RM && !FINE && e.currentTarget.hasAttribute('data-enter')) return glide(() => arr.top + (arr.h - vh) * .93, 3200);
+  if (!RM && !FINE && e.currentTarget.hasAttribute('data-enter')) return glide(() => arr.top + (arr.h - vh) * .93 * WALK, 3200);
   scrollTo({ top: y, behavior: RM ? 'auto' : 'smooth' });
 }
 let gliding = null;
