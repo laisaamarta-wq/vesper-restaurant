@@ -501,7 +501,7 @@ const ENTER = (() => {
   const tauAt = c => { const i = Math.min(N, Math.max(0, Math.floor(c * N))); return tbl[i]; };
   const prOf = c => c < SPLIT ? .84 * easeInv(c / SPLIT) : .84 + .09 * (c - SPLIT) / (1 - SPLIT);
   const cOf = pr => pr <= .84 ? SPLIT * ease(pr / .84) : SPLIT + (1 - SPLIT) * Math.min(1, (pr - .84) / .09);
-  return { cAt, tauAt, prOf, cOf, T: 4400 };
+  return { cAt, tauAt, prOf, cOf, T: 3300 };
 })();
 function enterGlide(arr) {
   if (gliding) gliding();
