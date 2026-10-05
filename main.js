@@ -17,6 +17,9 @@ const ART = window.VESPER_ART || {
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const FINE = matchMedia('(hover: hover) and (pointer: fine)').matches;
+// the phone experience: any touch device, or any window narrow enough to get the phone layout
+const NARROW = matchMedia('(max-width: 760px)');
+const PHONE = () => !FINE || NARROW.matches;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -475,7 +478,10 @@ function jump(e) {
   e.preventDefault();
   // touch: ENTER walks the same camera path as a scroll would, at walking pace —
   // it drives the page through the arrival timeline instead of the browser's quick smooth-scroll
-  if (!RM && !FINE && e.currentTarget.hasAttribute('data-enter')) return enterGlide(arr);
+  if (PHONE() && e.currentTarget.hasAttribute('data-enter')) {
+    // reduced motion: no camera walk, but still a calm dissolve into the room rather than a cut
+    return RM ? glide(() => arr.top + (arr.h - vh) * .93 * WALK, 1600) : enterGlide(arr);
+  }
   scrollTo({ top: y, behavior: RM ? 'auto' : 'smooth' });
 }
 /* ENTER on touch: paced by what the camera does, not by scroll distance.
@@ -549,7 +555,7 @@ function dishFloat(items) {
   const layers = [mk(), mk(), mk()];
   let flip = 0, cur = null, curLayer = null, raf = 0, live = false, cand = null, candT = 0;
   const cache = new Map();
-  const load = li => { if (cache.has(li)) return cache.get(li); const im = new Image(); im.decoding = 'async'; im.src = li.dataset.img; cache.set(li, im); return im; };
+  const load = li => { if (!PHONE()) return null; if (cache.has(li)) return cache.get(li); const im = new Image(); im.decoding = 'async'; im.src = li.dataset.img; cache.set(li, im); return im; };
   const row = li => $('.mi__row', li) || li;
   const IN_A = .30, IN_B = .64, STAY_A = .14, STAY_B = .80, DWELL = 160;   // fractions of the viewport; ms
   const line = li => { const r = row(li).getBoundingClientRect(); return (r.top + r.height / 2) / vh; };
@@ -573,6 +579,7 @@ function dishFloat(items) {
   }
   function tick(now) {
     raf = 0; if (!live) return;
+    if (!PHONE()) { if (cur) show(null); cand = null; return; }
     if (cur) { const c = line(cur); if (c < STAY_A || c > STAY_B) show(null); }
     if (!cur) {
       let best = null, bd = 1;
@@ -596,7 +603,7 @@ function dishFloat(items) {
 function menu() {
   const items = $$('.mi[data-img]');
   // touch: no hover, so the room shows you the dish as you pass it.
-  if (!FINE && items.length) dishFloat(items);
+  if (items.length) dishFloat(items);   // active whenever PHONE() is true — re-checked on resize
   // index highlight
   const links = $$('[data-mi]');
   const io = new IntersectionObserver(es => es.forEach(e => {
@@ -608,7 +615,7 @@ function menu() {
   const peek = $('[data-peek]'), pimg = $('img', peek);
   let on = false, px = 0, py = 0, cx = 0, cy = 0;
   items.forEach(li => {
-    li.addEventListener('mouseenter', () => { pimg.src = li.dataset.img; on = true; peek.classList.add('is-on'); });
+    li.addEventListener('mouseenter', () => { if (NARROW.matches) return; pimg.src = li.dataset.img; on = true; peek.classList.add('is-on'); });
     li.addEventListener('mouseleave', () => { on = false; peek.classList.remove('is-on'); });
   });
   addEventListener('mousemove', e => { px = e.clientX; py = e.clientY; }, { passive: true });
