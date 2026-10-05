@@ -347,7 +347,8 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
 .stepper button{width:44px;height:44px;font-size:18px}
 .stepper output{min-width:34px;text-align:center;font-family:var(--serif);font-size:24px}
 .res__name input{
-  background:none;border:0;border-bottom:1px solid var(--cream-faint);color:var(--cream);
+  -webkit-appearance:none;appearance:none;border-radius:0;
+  background:transparent;border:0;border-bottom:1px solid var(--cream-faint);color:var(--cream);
   font:inherit;font-family:var(--serif);font-size:24px;padding:6px 0 8px;width:100%;
 }
 .res__name input::placeholder{color:rgba(237,230,218,.3)}
@@ -356,7 +357,6 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
    Chrome/Safari force a light background + dark text with !important, so the
    change is parked behind a transition delay that never elapses, and the text
    colour is pinned with -webkit-text-fill-color. Firefox only adds a filter. */
-.res__name input{transition:background-color 0s 600000s,color 0s 600000s}
 .res__name input:-webkit-autofill,
 .res__name input:-webkit-autofill:hover,
 .res__name input:-webkit-autofill:focus,
@@ -368,7 +368,8 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
   font-family:var(--serif);font-size:24px;
 }
 .res__name input:-webkit-autofill:focus{border-color:var(--amber)}
-.res__name input:autofill{background-color:transparent;background-image:none;filter:none;color:var(--cream);-webkit-text-fill-color:var(--cream)}.res .btn-line{justify-self:start}
+.res__name input:autofill{background-color:transparent;background-image:none;filter:none;color:var(--cream);-webkit-text-fill-color:var(--cream);transition:background-color 0s 600000s,color 0s 600000s}
+.res .btn-line{justify-self:start}
 .res__done{margin:0;font-family:var(--serif);font-size:24px;line-height:1.3}
 .res__done small{display:block;font-family:var(--sans);font-size:12px;color:var(--cream-dim);margin-top:8px}
 
