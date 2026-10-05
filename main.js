@@ -475,8 +475,46 @@ function jump(e) {
   e.preventDefault();
   // touch: ENTER walks the same camera path as a scroll would, at walking pace —
   // it drives the page through the arrival timeline instead of the browser's quick smooth-scroll
-  if (!RM && !FINE && e.currentTarget.hasAttribute('data-enter')) return glide(() => arr.top + (arr.h - vh) * .93 * WALK, 3200);
+  if (!RM && !FINE && e.currentTarget.hasAttribute('data-enter')) return enterGlide(arr);
   scrollTo({ top: y, behavior: RM ? 'auto' : 'smooth' });
+}
+/* ENTER on touch: paced by what the camera does, not by scroll distance.
+   The arrival choreography already eases the camera; driving scroll with another ease on top
+   squeezed the whole walk into one second. Here the camera's own progress is laid out in time:
+   a soft first step, an even walk, an unhurried crossing of the threshold while the room fades in,
+   and one continuous settle into the room — no pause between "outside" and "inside". */
+const easeInv = x => x < .5 ? Math.cbrt(x / 4) : 1 - Math.cbrt(2 * (1 - x)) / 2;   // inverse of ease()
+const ENTER = (() => {
+  const SPLIT = .78, N = 1000, tbl = new Float32Array(N + 1);
+  // time spent per unit of progress: slower at the start, through the doorway, and on arrival
+  const dens = c => 1 + 1.6 * Math.exp(-((c / .07) ** 2)) + .75 * Math.exp(-(((c - .47) / .11) ** 2)) + 1.3 * Math.exp(-(((1 - c) / .1) ** 2));
+  let acc = 0; for (let i = 1; i <= N; i++) { acc += dens((i - .5) / N); tbl[i] = acc; }
+  for (let i = 1; i <= N; i++) tbl[i] /= acc;
+  const cAt = tau => { let lo = 0, hi = N; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tbl[m] < tau) lo = m; else hi = m; }
+    const f = (tau - tbl[lo]) / Math.max(1e-6, tbl[hi] - tbl[lo]); return (lo + f) / N; };
+  const tauAt = c => { const i = Math.min(N, Math.max(0, Math.floor(c * N))); return tbl[i]; };
+  const prOf = c => c < SPLIT ? .84 * easeInv(c / SPLIT) : .84 + .09 * (c - SPLIT) / (1 - SPLIT);
+  const cOf = pr => pr <= .84 ? SPLIT * ease(pr / .84) : SPLIT + (1 - SPLIT) * Math.min(1, (pr - .84) / .09);
+  return { cAt, tauAt, prOf, cOf, T: 4400 };
+})();
+function enterGlide(arr) {
+  if (gliding) gliding();
+  const span = () => (arr.h - vh) * WALK;
+  const pr0 = clamp((scrollY - arr.top) / Math.max(1, span()));
+  const tau0 = ENTER.tauAt(ENTER.cOf(pr0));
+  if (tau0 >= .995) return;
+  const dur = ENTER.T * (1 - tau0), t0 = performance.now();
+  let raf = 0;
+  const stop = () => { cancelAnimationFrame(raf); gliding = null; ['touchstart', 'wheel', 'keydown'].forEach(ev => removeEventListener(ev, stop)); };
+  ['touchstart', 'wheel', 'keydown'].forEach(ev => addEventListener(ev, stop, { passive: true }));   // a finger always wins
+  const step = now => {
+    const k = clamp((now - t0) / dur);
+    const pr = ENTER.prOf(ENTER.cAt(tau0 + (1 - tau0) * k));
+    window.scrollTo(0, arr.top + span() * pr);
+    if (k < 1) raf = requestAnimationFrame(step); else stop();
+  };
+  gliding = stop;
+  raf = requestAnimationFrame(step);
 }
 let gliding = null;
 const easeWalk = t => .5 - Math.cos(Math.PI * t) / 2;            // inOutSine: a soft first step, a soft arrival
@@ -500,20 +538,20 @@ $$('a[href^="#"]').forEach(a => a.addEventListener('click', jump));
 /* ==========================================================
    04 MENU — one interaction: the plate follows the cursor
    ========================================================== */
-/* touch menu: one photograph at a time, shown as its dish passes the reading line.
-   Layers cross over, so the outgoing image leaves where it was and the next arrives at its dish.
-   Hysteresis (enter band narrower than stay band) keeps it steady under small finger moves. */
+/* touch menu: one photograph at a time, shown when its dish reaches the reading area.
+   Each photo loads only as its dish approaches; a dish has to rest in the reading band for a beat
+   before its photograph appears, so a quick flick never flashes images. The layer sits inside the
+   list and scrolls with it — no drift of its own — and nothing here ever touches the scroll. */
 function dishFloat(items) {
   const host = $('[data-menu]'); if (!host) return;
   const mk = () => { const f = document.createElement('div'); f.className = 'dishfloat'; f.setAttribute('aria-hidden', 'true');
     f.innerHTML = '<div class="dishfloat__in"><img alt="" decoding="async"></div>'; host.appendChild(f); return f; };
   const layers = [mk(), mk(), mk()];
-  let flip = 0, cur = null, curLayer = null, loaded = false, raf = 0, live = false;
+  let flip = 0, cur = null, curLayer = null, raf = 0, live = false, cand = null, candT = 0;
   const cache = new Map();
-  const load = () => { if (loaded) return; loaded = true;
-    items.forEach(li => { const im = new Image(); im.decoding = 'async'; im.src = li.dataset.img; cache.set(li, im); }); };
+  const load = li => { if (cache.has(li)) return cache.get(li); const im = new Image(); im.decoding = 'async'; im.src = li.dataset.img; cache.set(li, im); return im; };
   const row = li => $('.mi__row', li) || li;
-  const IN_A = .30, IN_B = .70, STAY_A = .16, STAY_B = .82;      // fractions of the viewport (reading line ≈ .5)
+  const IN_A = .30, IN_B = .64, STAY_A = .14, STAY_B = .80, DWELL = 160;   // fractions of the viewport; ms
   const line = li => { const r = row(li).getBoundingClientRect(); return (r.top + r.height / 2) / vh; };
   function place(layer, li) {
     // sit just above the dish name, so the dish itself and what comes next stay readable
@@ -523,30 +561,31 @@ function dishFloat(items) {
   }
   function show(li) {
     if (curLayer) { const old = curLayer; old.classList.add('is-out'); old.classList.remove('is-on');
-      setTimeout(() => old.classList.remove('is-out'), 900); }
+      setTimeout(() => old.classList.remove('is-out'), 1200); }
     cur = li; curLayer = null;
     if (!li) return;
-    const layer = layers[flip = (flip + 1) % layers.length], img = $('img', layer), src = cache.get(li);
+    const layer = layers[flip = (flip + 1) % layers.length], img = $('img', layer), src = load(li);
     layer.classList.remove('is-out', 'is-on');
-    img.src = li.dataset.img; place(layer, li); park(layer, li);
+    img.src = li.dataset.img; place(layer, li);
     curLayer = layer;
-    const go = () => { if (cur === li) requestAnimationFrame(() => layer.classList.add('is-on')); };
-    (src && src.decode ? src.decode() : Promise.resolve()).catch(() => {}).then(go);
+    const go = () => { if (cur === li) requestAnimationFrame(() => requestAnimationFrame(() => layer.classList.add('is-on'))); };
+    (src.decode ? src.decode() : Promise.resolve()).catch(() => {}).then(go);
   }
-  // slight parallax: the photograph drifts a little slower than the list
-  function park(layer, li) { if (RM) return; const c = line(li); layer.style.setProperty('--py', `${(c - .5) * vh * .12}px`); }
-  function tick() {
+  function tick(now) {
     raf = 0; if (!live) return;
     if (cur) { const c = line(cur); if (c < STAY_A || c > STAY_B) show(null); }
     if (!cur) {
       let best = null, bd = 1;
-      items.forEach(li => { const c = line(li); if (c >= IN_A && c <= IN_B && Math.abs(c - .5) < bd) { bd = Math.abs(c - .5); best = li; } });
-      if (best) show(best);
+      items.forEach(li => { const c = line(li); if (c >= IN_A && c <= IN_B && Math.abs(c - .47) < bd) { bd = Math.abs(c - .47); best = li; } });
+      if (best !== cand) { cand = best; candT = now; }
+      if (cand && now - candT >= DWELL) show(cand);
+      else if (cand) ask();                 // keep watching until the dish has rested long enough
     }
-    if (cur && curLayer) park(curLayer, cur);
   }
   const ask = () => { if (!raf) raf = requestAnimationFrame(tick); };
-  new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) load(); }), { rootMargin: '1200px 0px' }).observe(host);
+  // load each photograph only as its dish comes within about a screen of the reading line
+  const near = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { load(e.target); near.unobserve(e.target); } }), { rootMargin: '0px 0px 90% 0px' });
+  items.forEach(li => near.observe(li));
   new IntersectionObserver(es => es.forEach(e => {
     live = e.isIntersecting; if (live) ask(); else if (cur) show(null);
   })).observe(host);
