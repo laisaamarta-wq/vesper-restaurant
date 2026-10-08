@@ -460,7 +460,7 @@ function pano(raw, t, dt) {
   const inside = p >= PIN - .001;
   if (!P.loading && raw > .04) panoLoad();
   // back outside: the next entry is welcomed again
-  if (p < PIN - .06) { P.seen = false; P.cueY = null; P.movedOn = false; }
+  if (p < PIN - .06) { P.seen = false; P.touched = false; P.cueY = null; P.movedOn = false; }   // every entry gets its welcome and its hint
   P.textK = lerp(P.textK, P.seen ? 0 : 1, 1 - Math.exp(-dt / 260));
   if (!P.ok) { cv.style.opacity = 0; cv.classList.remove('is-live'); P.live = false; showCue(P.cue, false); showCue(P.scue, false); return; }
   P.fadeIn = Math.min(1, P.fadeIn + dt / 600);              // if the image arrives late, it still fades in

@@ -177,6 +177,7 @@ html.is-held .pano.is-live{touch-action:none}
 }
 .lookcue p{margin:0;text-transform:uppercase}
 .lookcue__t{font-size:11px;letter-spacing:.34em;color:var(--cream)}
+.lookcue__deg{color:var(--amber);letter-spacing:.12em;margin-left:.5em}
 .lookcue__g{display:flex;align-items:center;gap:14px;font-size:10px;letter-spacing:.26em;color:var(--cream-dim)}
 .lookcue__a{font-family:var(--sans);letter-spacing:0;display:inline-block;animation:lookL 2.8s var(--ease) infinite}
 .lookcue__a:last-child{animation-name:lookR}
