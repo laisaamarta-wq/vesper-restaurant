@@ -89,6 +89,8 @@ function measure() {
   vw = innerWidth; vh = innerHeight;
   const y = scrollY;
   stages.forEach(s => { const r = s.el.getBoundingClientRect(); s.top = r.top + y; s.h = s.el.offsetHeight; });
+  const a = stages.find(s => s.id === 'arrival');
+  if (a) WALK = clamp((NARROW.matches ? 2.18 : 2.81) / Math.max(1, a.h / vh - 1), .3, .9);
 }
 function targets() {
   const y = scrollY;
@@ -106,9 +108,10 @@ const A = {
   glow: $('[data-layer="glow"]'), shade: $('[data-layer="shade"]'), hero: $('[data-hero]'), inside: $('[data-inside]'),
 };
 let breathe = 0;
-// The walk-in uses the first part of the stage; what's left is a held breath inside the room,
-// so the interior is given time to be seen before the page moves on.
-const WALK = .78;
+// The walk-in uses the first part of the stage (the same scroll distance as before: 2.81 screens on
+// desktop, 2.18 on phones); what's left is time inside the room — to look around in 360° — before
+// the page moves on. Recomputed in measure() from the real stage height.
+let WALK = .61;
 function arrival(raw) {
   const hold = map(raw, WALK, 1);
   const p = Math.min(1, raw / WALK);
@@ -122,7 +125,7 @@ function arrival(raw) {
     A.door.style.opacity = 0;
     A.int.style.opacity = map(p, .25, .55); A.int.style.clipPath = 'none';
     A.hero.style.opacity = 1 - map(p, 0, .15);
-    A.inside.style.opacity = map(p, .65, .8); A.inside.classList.toggle('is-in', p > .6);
+    A.inside.style.opacity = map(p, .65, .8) * (P.ok ? P.textK * (1 - map(hold, .2, .34)) : 1); A.inside.classList.toggle('is-in', p > .6);
     A.glow.style.opacity = 0;
     return;
   }
@@ -154,7 +157,7 @@ function arrival(raw) {
   A.int.style.clipPath = full ? 'inset(0 0 0 0)' : `inset(${inset} ${r})`;
   A.int.style.opacity = map(p, .38, .56);
   const hd = h / vh;                             // the room is further away than the door: it grows more slowly
-  const Zi = full ? (1 + .07 * easeOut(map(p, .84, 1))) * (1 + .035 * ease(hold)) : Math.max(.5, Math.min(1, .38 + .62 * hd));   // in the hold: a slow last step into the room
+  const Zi = full ? (1 + .12 * easeOut(map(p, .84, .95))) * (1 + .035 * ease(hold)) : Math.max(.5, Math.min(1, .38 + .62 * hd));   // in the hold: a slow last step into the room
   A.int.style.transform = camT(C, F, Zi);
 
   // warmth on the threshold
@@ -166,9 +169,208 @@ function arrival(raw) {
   A.hero.style.opacity = ho;
   A.hero.style.transform = `translate3d(0, ${-map(p, 0, .15) * 40}px, 0)`;
   A.hero.style.visibility = ho <= 0 ? 'hidden' : '';
-  const io = map(p, .86, .93) * (1 - map(p, .985, 1) * .0);
+  // once the 360° room is there, the line steps aside: on the first look around, or as the visitor moves on
+  const io = map(p, .86, .93) * (P.ok ? P.textK * (1 - map(hold, .2, .34)) : 1);
   A.inside.style.opacity = io;
   A.inside.classList.toggle('is-in', p > .85);
+}
+
+/* ==========================================================
+   01b INSIDE — the room in 360°
+   One continuous panorama of the same room (cylindrical, 360° × ~76°), drawn by a tiny shader:
+   every screen pixel becomes a ray, the ray becomes a point on the cylinder. Drag / swipe / a
+   sideways trackpad gesture turns the head; vertical scrolling is never taken — it carries the
+   visitor on, and on the way out the gaze settles on a candle-lit table (the next chapter).
+   If WebGL or the image is unavailable, the interior photograph underneath simply stays.
+   ========================================================== */
+const DEG = Math.PI / 180;
+const PANO = {
+  u0: .469,                 // texture u that lines up with the interior photograph (forward, toward the bar)
+  vc: .47,                  // horizon row of the panorama
+  R: 4 / (2 * Math.PI),     // 4:1 texture covering 360°: texture-v per unit of tan(elevation)
+  pitch0: -3 * DEG,         // eye level, a touch down — the same as the photograph
+  exitYaw: 38 * DEG,        // the table on the right, under the arches
+};
+const TOP = Math.atan(PANO.vc / PANO.R), BOT = Math.atan((1 - PANO.vc) / PANO.R);
+const P = {
+  cv: $('[data-pano]'), cue: $('[data-lookcue]'),
+  gl: null, ok: false, loading: false, failed: false, fadeIn: 0,
+  yaw: 0, pitch: PANO.pitch0, vy: 0, vp: 0,
+  drag: null, touched: false, seen: false, textK: 1,
+  glanceAt: 0, glanceCut: false, settleAt: 0, live: false,
+  uni: null,
+};
+function panoInit() {
+  const cv = P.cv; if (!cv) return;
+  let gl = null;
+  try { gl = cv.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' }); } catch (e) {}
+  if (!gl) { P.failed = true; return; }
+  const hp = gl.getShaderPrecisionFormat && gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+  const prec = hp && hp.precision > 0 ? 'highp' : 'mediump';
+  const vs = 'attribute vec2 a; varying vec2 q; void main(){ q = a; gl_Position = vec4(a, 0., 1.); }';
+  const fs = `precision ${prec} float;
+    varying vec2 q; uniform sampler2D tx; uniform vec4 cam; uniform vec3 pr;
+    void main(){
+      vec3 d = vec3(q.x * cam.z * cam.w, q.y * cam.z, -1.);
+      float c = cos(cam.y), s = sin(cam.y);
+      float y = d.y * c - d.z * s, z = d.y * s + d.z * c;
+      float u = pr.x + (atan(d.x, -z) + cam.x) / 6.2831853;
+      float v = pr.y - pr.z * y / length(vec2(d.x, z));
+      gl_FragColor = vec4(texture2D(tx, vec2(u, v)).rgb, 1.);
+    }`;
+  const sh = (type, src) => { const o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o); return o; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(pr);
+  if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) { P.failed = true; return; }
+  gl.useProgram(pr);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  P.uni = { cam: gl.getUniformLocation(pr, 'cam'), pr: gl.getUniformLocation(pr, 'pr'), tx: gl.getUniformLocation(pr, 'tx') };
+  P.gl = gl;
+  cv.addEventListener('webglcontextlost', e => { e.preventDefault(); P.ok = false; P.failed = true; cv.style.opacity = 0; cv.classList.remove('is-live'); });
+  P.cue && ($('[data-lookcue-label]').textContent = FINE ? 'Drag to look around' : 'Swipe to look around');
+  bindLook();
+  // the hero stays fast: the room is fetched once the page has settled, or as soon as the visitor heads for the door
+  addEventListener('load', () => setTimeout(panoLoad, 2500), { once: true });
+}
+function panoLoad() {
+  if (P.loading || P.failed || !P.gl) return;
+  P.loading = true;
+  const gl = P.gl;
+  const big = (gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0) >= 8192;
+  const src = `assets/web/interior-360-${big ? 8192 : 4096}.webp?v=1`;
+  const img = new Image(); img.decoding = 'async';
+  img.onload = () => {
+    (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(() => {
+      if (!P.gl || P.failed) return;
+      const tx = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tx);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);           // the room closes on itself behind you
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+      if (gl.getError() !== gl.NO_ERROR) { P.failed = true; return; }
+      gl.uniform1i(P.uni.tx, 0);
+      P.ok = true;
+    });
+  };
+  img.onerror = () => { P.failed = true; };
+  img.src = src;
+}
+const wrapA = a => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+// vertical field of view for this screen: ~82° across on a desktop, a tall eye-level frame on a phone
+function baseV() {
+  const asp = vw / vh;
+  const v = 2 * Math.atan(Math.tan(41 * DEG) / asp);
+  return clamp(v, 40 * DEG, (PHONE() ? 68 : 62) * DEG);
+}
+let panoV = 1;
+function touch() {
+  if (!P.touched) { P.touched = true; P.cue && P.cue.classList.remove('is-on'); }
+  P.seen = true;
+  // the welcoming glance hands over smoothly to the visitor's own look
+  if (P.glanceAt && !P.glanceCut) { P.yaw += glanceAt(performance.now()); P.glanceCut = true; }
+}
+function glanceAt(t) {
+  if (!P.glanceAt || P.glanceCut || RM) return 0;
+  const k = (t - P.glanceAt) / 3600;
+  if (k <= 0 || k >= 1) return 0;
+  return -13 * DEG * Math.sin(Math.PI * easeWalk(k));     // a slow look along the banquette, and back to the bar
+}
+function bindLook() {
+  const cv = P.cv;
+  const perPx = () => panoV / Math.max(1, cv.clientHeight);
+  cv.addEventListener('pointerdown', e => {
+    if (!P.live || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    P.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), vx: 0, vy: 0, mouse: e.pointerType === 'mouse', moved: false };
+    P.vy = P.vp = 0;
+    if (P.drag.mouse) { cv.setPointerCapture(e.pointerId); cv.classList.add('is-drag'); e.preventDefault(); }
+  });
+  cv.addEventListener('pointermove', e => {
+    const d = P.drag; if (!d || d.id !== e.pointerId) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y, now = performance.now(), dt = Math.max(1, now - d.t);
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+    if (!d.moved) { d.moved = true; touch(); }
+    const k = perPx();
+    P.yaw -= dx * k;
+    if (d.mouse) P.pitch += dy * k;                         // on touch, vertical movement belongs to the page
+    d.vx = lerp(d.vx, -dx * k / dt, .5); d.vy = lerp(d.vy, d.mouse ? dy * k / dt : 0, .5);
+    d.x = e.clientX; d.y = e.clientY; d.t = now;
+  });
+  const end = e => {
+    const d = P.drag; if (!d || d.id !== e.pointerId) return;
+    if (!RM && performance.now() - d.t < 90) { P.vy = d.vx; P.vp = d.vy; }   // let go while moving: the head keeps turning, softly
+    P.drag = null; cv.classList.remove('is-drag');
+  };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('lostpointercapture', end);
+  // trackpad: a sideways two-finger gesture turns the head; a vertical one still scrolls the page
+  cv.addEventListener('wheel', e => {
+    if (!P.live || Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 1.2 || e.ctrlKey) return;
+    e.preventDefault();
+    const px = e.deltaX * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vw : 1);
+    touch(); P.yaw += px * perPx() * .9; P.vy = 0;
+  }, { passive: false });
+  addEventListener('keydown', e => {
+    if (!P.live || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.metaKey) return;
+    const tg = e.target; if (tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName))) return;
+    touch(); P.vy = (e.key === 'ArrowLeft' ? -1 : 1) * .0016;
+  });
+}
+function pano(raw, t, dt) {
+  const cv = P.cv; if (!cv || !P.gl) return;
+  const p = Math.min(1, raw / WALK), hold = map(raw, WALK, 1);
+  if (!P.loading && raw > .04) panoLoad();
+  // back outside: the next entry is welcomed again
+  if (p < .86) { P.glanceAt = 0; P.glanceCut = false; P.settleAt = 0; }
+  if (p < .8) P.seen = false;
+  P.textK = lerp(P.textK, P.seen ? 0 : 1, 1 - Math.exp(-dt / 260));
+  if (!P.ok) { cv.style.opacity = 0; cv.classList.remove('is-live'); P.live = false; P.cue && P.cue.classList.remove('is-on'); return; }
+  P.fadeIn = Math.min(1, P.fadeIn + dt / 700);              // if the image arrives late, it still fades in
+  const alpha = map(p, .87, .94) * P.fadeIn;
+  cv.style.opacity = alpha < .002 ? 0 : alpha.toFixed(3);
+  P.live = alpha > .6;
+  cv.classList.toggle('is-live', P.live);
+  if (alpha <= 0) return;
+
+  // the room appears at the same wide framing as the photograph beneath it; once it is fully there the
+  // camera settles to eye level, and one slow glance shows that the room continues around you
+  if (alpha >= .999 && !P.settleAt) { P.settleAt = t; if (!RM) P.glanceAt = t + 900; }
+  if (P.cue) {
+    const on = !P.touched && P.live && hold < .3 && (RM || (P.glanceAt && t > P.glanceAt + 900));
+    if (on !== P.cue.classList.contains('is-on')) P.cue.classList.toggle('is-on', on);
+  }
+
+  // inertia
+  if (!P.drag && (P.vy || P.vp)) {
+    P.yaw += P.vy * dt; P.pitch += P.vp * dt;
+    const f = Math.exp(-dt / 320); P.vy *= f; P.vp *= f;
+    if (Math.abs(P.vy) < 1e-6 && Math.abs(P.vp) < 1e-6) P.vy = P.vp = 0;
+  }
+  P.pitch = clamp(P.pitch, -BOT + 20 * DEG, TOP - 18 * DEG);
+  P.yaw = wrapA(P.yaw);
+
+  const settle = RM ? .5 : P.settleAt ? 1 - easeWalk(clamp((t - P.settleAt) / 2000)) : 1;
+  // leaving: the gaze turns to a candle-lit table, a step closer — the next chapter begins there
+  const out = RM ? 0 : ease(map(hold, .38, .94));
+  const sway = RM ? 0 : Math.sin(t * .00041) * .35 * DEG * (P.drag ? 0 : 1);
+  const yawU = P.yaw + glanceAt(t) + sway;
+  const yaw = yawU + wrapA(PANO.exitYaw - yawU) * out;
+  const V = lerp(baseV(), TOP + BOT, settle) * lerp(1, .84, out);
+  const half = Math.min(V / 2, (TOP + BOT) / 2 - .5 * DEG);
+  let pitch = lerp(P.pitch, (PHONE() ? -5 : -7) * DEG, out);
+  pitch = clamp(pitch, -BOT + half, TOP - half);
+  panoV = half * 2;
+
+  // draw
+  const gl = P.gl, dpr = Math.min(devicePixelRatio || 1, PHONE() ? 2 : 1.5);
+  const w = Math.round(cv.clientWidth * dpr), h = Math.round(cv.clientHeight * dpr);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  gl.viewport(0, 0, w, h);
+  gl.uniform4f(P.uni.cam, yaw, pitch, Math.tan(half), w / h);
+  gl.uniform3f(P.uni.pr, PANO.u0, PANO.vc, PANO.R);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
 /* ==========================================================
@@ -470,7 +672,7 @@ function jump(e) {
   const href = e.currentTarget.getAttribute('href'); if (!href || href[0] !== '#') return;
   let y = null;
   const arr = stages.find(s => s.id === 'arrival'), tab = stages.find(s => s.id === 'table');
-  if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) y = arr.top + (arr.h - vh) * .93 * WALK;   // walk in
+  if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) { y = arr.top + (arr.h - vh) * LAND * WALK; panoLoad(); }   // walk in
   else if (href === '#menu' && e.currentTarget.hasAttribute('data-to-menu')) y = tab.top + (tab.h - vh) * .9;
   else if (href === '#top') y = 0;
   else { const t = $(href); if (t) y = t.getBoundingClientRect().top + scrollY - (href === '#reserve' ? 40 : 0); }
@@ -480,7 +682,7 @@ function jump(e) {
   // it drives the page through the arrival timeline instead of the browser's quick smooth-scroll
   if (PHONE() && e.currentTarget.hasAttribute('data-enter')) {
     // reduced motion: no camera walk, but still a calm dissolve into the room rather than a cut
-    return RM ? glide(() => arr.top + (arr.h - vh) * .93 * WALK, 1600) : enterGlide(arr);
+    return RM ? glide(() => arr.top + (arr.h - vh) * LAND * WALK, 1600) : enterGlide(arr);
   }
   scrollTo({ top: y, behavior: RM ? 'auto' : 'smooth' });
 }
@@ -489,6 +691,7 @@ function jump(e) {
    squeezed the whole walk into one second. Here the camera's own progress is laid out in time:
    a soft first step, an even walk, an unhurried crossing of the threshold while the room fades in,
    and one continuous settle into the room — no pause between "outside" and "inside". */
+const LAND = .97;   // where ENTER sets you down: through the door, the room settling around you
 const easeInv = x => x < .5 ? Math.cbrt(x / 4) : 1 - Math.cbrt(2 * (1 - x)) / 2;   // inverse of ease()
 const ENTER = (() => {
   const SPLIT = .78, N = 1000, tbl = new Float32Array(N + 1);
@@ -499,8 +702,8 @@ const ENTER = (() => {
   const cAt = tau => { let lo = 0, hi = N; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tbl[m] < tau) lo = m; else hi = m; }
     const f = (tau - tbl[lo]) / Math.max(1e-6, tbl[hi] - tbl[lo]); return (lo + f) / N; };
   const tauAt = c => { const i = Math.min(N, Math.max(0, Math.floor(c * N))); return tbl[i]; };
-  const prOf = c => c < SPLIT ? .84 * easeInv(c / SPLIT) : .84 + .09 * (c - SPLIT) / (1 - SPLIT);
-  const cOf = pr => pr <= .84 ? SPLIT * ease(pr / .84) : SPLIT + (1 - SPLIT) * Math.min(1, (pr - .84) / .09);
+  const prOf = c => c < SPLIT ? .84 * easeInv(c / SPLIT) : .84 + (LAND - .84) * (c - SPLIT) / (1 - SPLIT);
+  const cOf = pr => pr <= .84 ? SPLIT * ease(pr / .84) : SPLIT + (1 - SPLIT) * Math.min(1, (pr - .84) / (LAND - .84));
   return { cAt, tauAt, prOf, cOf, T: 2700 };
 })();
 function enterGlide(arr) {
@@ -700,7 +903,7 @@ function frame(t) {
   const arr = stages.find(s => s.id === 'arrival'), tab = stages.find(s => s.id === 'table');
   breathe = RM ? 0 : (1 - map(arr.p, 0, .08)) * (Math.sin(t * .00035) * .5 + .5) * .012;
   const inView = s => scrollY + vh > s.top - vh && scrollY < s.top + s.h + vh;
-  if (inView(arr)) arrival(arr.p);
+  if (inView(arr)) { arrival(arr.p); pano(arr.p, t, dt); } else P.live = false;
   if (inView(tab)) table(tab.p, t);
   steam && inView(tab) && steam.tick(t);
   lightWords(); plateParallax(); nightFx(); chrome();
@@ -717,7 +920,7 @@ addEventListener('load', resize);
 
 /* ---------- go ---------- */
 splitWords(); status(); setInterval(status, 30000);
-initDishGL(); initSteam();
+initDishGL(); initSteam(); panoInit();
 measure(); sizeDish(); menu(); reservation(); boot();
 requestAnimationFrame(frame);
 
