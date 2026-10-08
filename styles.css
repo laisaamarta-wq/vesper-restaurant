@@ -331,21 +331,22 @@ html.is-held .pano.is-live{touch-action:none}
 .mi__photo{display:none}
 .mi--tap{cursor:pointer;-webkit-tap-highlight-color:transparent;outline-offset:6px}
 .mi--tap .mi__photo{display:block;padding-top:14px}
-.mi__photo-in{--peek:58px;position:relative;height:var(--peek);width:min(100%, 90svh);overflow:hidden;border-radius:2px;background:#191512;
+.mi__photo-in{--peek:112px;position:relative;height:var(--peek);width:min(100%, 90svh);overflow:hidden;border-radius:2px;background:#191512;
   transition:height .8s cubic-bezier(.65,0,.25,1)}
 .mi__photo img{display:block;width:100%;aspect-ratio:3/2;object-fit:cover;
-  transform:translate3d(0,calc((var(--peek) - var(--ph, 228px)) / 2),0);
-  opacity:0;filter:brightness(.78) saturate(.9);
+  /* closed: the preview is framed on the food itself (--fy: where the dish sits in the photograph) */
+  transform:translate3d(0,clamp(calc(var(--peek) - var(--ph, 228px)), calc(var(--peek) / 2 - var(--fy, .5) * var(--ph, 228px)), 0px),0);
+  opacity:0;filter:brightness(.92);
   transition:transform .8s cubic-bezier(.65,0,.25,1),opacity .8s ease,filter .8s ease}
 .mi__photo img.is-ready{opacity:1}
-/* a hairline of light across the strip: it is a photograph you can open, not a decoration */
+/* a quiet edge and a soft fall-off top and bottom: a window onto the plate that opens on tap */
 .mi__photo-in::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:2px;
-  box-shadow:inset 0 0 0 1px rgba(237,230,218,.08);background:linear-gradient(90deg,rgba(14,12,10,.35),rgba(14,12,10,0) 30%,rgba(14,12,10,0) 70%,rgba(14,12,10,.35));
+  box-shadow:inset 0 0 0 1px rgba(237,230,218,.08);background:linear-gradient(180deg,rgba(14,12,10,.28),rgba(14,12,10,0) 22%,rgba(14,12,10,0) 78%,rgba(14,12,10,.28));
   transition:opacity .8s ease}
 .mi--tap.is-open .mi__photo-in{height:var(--ph, 228px)}
 .mi--tap.is-open .mi__photo img{transform:none;filter:none}
 .mi--tap.is-open .mi__photo-in::after{opacity:0}
-.mi--tap:active .mi__photo img{filter:brightness(.9) saturate(.95)}
+.mi--tap:active .mi__photo img{filter:brightness(1)}
 .mi--tap .mi__price{transition:color .6s}
 .mi--tap.is-open .mi__price{color:var(--amber)}
 .mi--tap[data-img] .mi__name::after{display:none}             /* the strip itself says "there is a photograph" */
