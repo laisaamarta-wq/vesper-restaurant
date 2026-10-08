@@ -157,7 +157,7 @@ function arrival(raw) {
     A.door.style.opacity = 0;
     A.int.style.opacity = map(p, .2, .45); A.int.style.clipPath = 'none';
     A.hero.style.opacity = 1 - map(p, 0, .15);
-    A.inside.style.opacity = map(p, .45, PIN) * (P.ok ? P.textK * (1 - map(hold, .08, .3)) : 1); A.inside.classList.toggle('is-in', p > .44);
+    A.inside.style.opacity = map(p, .45, PIN) * (P.ok ? P.textK * (1 - map(hold, .2, .35)) : 1); A.inside.classList.toggle('is-in', p > .44);
     A.glow.style.opacity = 0;
     A.F = { x: vw / 2, y: vh / 2 };
     return;
@@ -191,7 +191,7 @@ function arrival(raw) {
 
   // warmth on the threshold, gone as you step in
   A.glow.style.opacity = .75 * Math.sin(Math.PI * map(p, .5, PEND + .03));
-  A.shade.style.opacity = 1 - .35 * map(p, .4, PIN);
+  A.shade.style.opacity = 1 - .35 * map(p, .4, PIN) + .3 * map(hold, .55, 1);   // the room dims as you leave it
 
   // type
   const ho = 1 - map(p, .01, .12);
@@ -199,7 +199,7 @@ function arrival(raw) {
   A.hero.style.transform = `translate3d(0, ${-map(p, 0, .15) * 40}px, 0)`;
   A.hero.style.visibility = ho <= 0 ? 'hidden' : '';
   // the line arrives with you, and steps aside on the first look around or as you move on
-  const io = map(p, PIN - .04, PEND) * (P.ok ? P.textK * (1 - map(hold, .08, .3)) : 1);
+  const io = map(p, PIN - .04, PEND) * (P.ok ? P.textK * (1 - map(hold, .2, .35)) : 1 - map(hold, .6, .9));
   A.inside.style.opacity = io;
   A.inside.classList.toggle('is-in', p > PIN - .05);
 }
@@ -259,7 +259,7 @@ function panoInit() {
   P.uni = { cam: gl.getUniformLocation(pr, 'cam'), pr: gl.getUniformLocation(pr, 'pr'), tx: gl.getUniformLocation(pr, 'tx'), off: gl.getUniformLocation(pr, 'off') };
   P.gl = gl;
   cv.addEventListener('webglcontextlost', e => { e.preventDefault(); P.ok = false; P.failed = true; cv.style.opacity = 0; cv.classList.remove('is-live'); });
-  P.cue && ($('[data-lookcue-label]').textContent = FINE ? 'Drag to look around' : 'Swipe to look around');
+  P.cue && ($('[data-lookcue-label]').textContent = FINE ? 'drag' : 'swipe');
   bindLook();
   // the hero stays fast: the room is fetched once the page has settled, or as soon as the visitor heads for the door
   addEventListener('load', () => setTimeout(panoLoad, 2500), { once: true });
@@ -319,45 +319,138 @@ function touch() {
   if (!P.touched) { P.touched = true; P.cue && P.cue.classList.remove('is-on'); }
   P.seen = true; P.lastAct = performance.now();
 }
+/* ==========================================================
+   THE ROOM — a held moment
+   Arriving inside, the page stops: vertical scroll is held and the visitor looks around
+   (swipe / drag / sideways trackpad / ← →). The camera never moves by itself.
+   The hold lets go
+     · once the visitor has looked around (≈60° of turning, or ~2 s of looking) — then
+       "Scroll to continue" appears and the page scrolls normally again;
+     · or as soon as the visitor clearly wants to move on: the first vertical push is answered
+       (the room leans in, the hint pulses), the second one continues the page;
+     · at once when scrolling back up, on any navigation link, or if the room can't be shown.
+   Nothing about the page layout changes while held, so letting go never jumps.
+   ========================================================== */
+const html = document.documentElement;
+const ROOM = { held: false, done: false, lockY: 0, attempts: 0, burstT: 0, burstSum: 0, burstUsed: false, ignoreBurst: false,
+  kick: 0, pull: 0, lean: 0, nudgeUntil: 0, suppressUntil: 0, prev: 0, at: 0, lastPush: 0 };
+const arrStage = () => stages.find(s => s.id === 'arrival');
+const yAtHold = h => { const a = arrStage(); return a.top + (a.h - vh) * (WALK + (1 - WALK) * h); };
+const blockTouch = e => { if (ROOM.held && e.cancelable) e.preventDefault(); };
+function holdRoom() {
+  ROOM.held = true; ROOM.attempts = 0; ROOM.burstUsed = false; ROOM.at = performance.now();
+  ROOM.ignoreBurst = performance.now() - ROOM.burstT < 240;     // the wheel/trackpad momentum that carried you in is not a request to leave
+  ROOM.lockY = Math.round(clamp(scrollY, yAtHold(0) + 1, yAtHold(.12)));
+  if (Math.abs(scrollY - ROOM.lockY) > 1) scrollTo(0, ROOM.lockY);
+  P.explored = 0; P.lookMs = 0; P.prevYaw = P.yaw;
+  html.classList.add('is-held');
+  addEventListener('touchmove', blockTouch, { passive: false });
+}
+function releaseRoom(why) {
+  if (!ROOM.held) return;
+  ROOM.held = false;
+  html.classList.remove('is-held');
+  removeEventListener('touchmove', blockTouch);
+  if (why !== 'up') ROOM.done = true;                           // once you've been in, the way back and forth is free
+  if (why === 'explored') { P.cueY = scrollY; P.movedOn = false; }
+}
+// a push toward the next chapter counts once the visitor has had a moment inside, and only once per deliberate push
+function pushCounts(now) {
+  if (now - ROOM.at < 900 || now - ROOM.lastPush < 450) return false;
+  ROOM.lastPush = now; return true;
+}
+function nudge() { ROOM.kick = 1; ROOM.nudgeUntil = performance.now() + 2200; P.cue && (P.cue.classList.remove('is-nudge'), void P.cue.offsetWidth, P.cue.classList.add('is-nudge')); }
+function roomFrame(t, dt) {
+  const a = arrStage(); if (!a) return;
+  const tgt = a.target, w = WALK - .0005;
+  // stepping in (downward, across the threshold) holds the room — the first time, or until it has been explored
+  if (!ROOM.held && !ROOM.done && P.ok && P.fadeIn > .9 && t > ROOM.suppressUntil && ROOM.prev < w && tgt >= w && tgt < WALK + (1 - WALK) * .5) holdRoom();
+  ROOM.prev = tgt;
+  if (!ROOM.held) return;
+  if (!P.ok) return releaseRoom('fail');
+  if (Math.abs(scrollY - ROOM.lockY) > 2) scrollTo(0, ROOM.lockY);           // momentum that slipped through
+  ROOM.kick *= Math.exp(-dt / 260);
+}
 function bindLook() {
   const cv = P.cv;
   const perPx = () => panoV / Math.max(1, cv.clientHeight);
   cv.addEventListener('pointerdown', e => {
     if (!P.live || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    P.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), vx: 0, vy: 0, mouse: e.pointerType === 'mouse', moved: false };
+    P.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t: performance.now(), vx: 0, vy: 0, sv: 0,
+      mouse: e.pointerType === 'mouse', moved: false, axis: '', scroll: false };
     P.vy = P.vp = 0;
     if (P.drag.mouse) { cv.setPointerCapture(e.pointerId); cv.classList.add('is-drag'); e.preventDefault(); }
   });
   cv.addEventListener('pointermove', e => {
     const d = P.drag; if (!d || d.id !== e.pointerId) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y, now = performance.now(), dt = Math.max(1, now - d.t);
-    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+    const tx = e.clientX - d.x0, ty = e.clientY - d.y0;
+    if (!d.axis) {
+      if (Math.abs(tx) + Math.abs(ty) < 8) return;
+      d.axis = d.mouse || Math.abs(tx) >= Math.abs(ty) * .8 ? 'h' : 'v';      // a clearly vertical touch is about the page, not the head
+    }
+    if (d.axis === 'v') {
+      // only reached while the room is held (otherwise the browser scrolls natively)
+      if (d.scroll) { scrollBy(0, -dy); d.sv = lerp(d.sv, -dy / dt, .4); }
+      else if (ty > 24) { releaseRoom('up'); d.scroll = true; }              // back toward the street: always free
+      else if (ty < -24 && ROOM.attempts >= 1 && now - ROOM.at > 900 && now - ROOM.lastPush > 450) { releaseRoom('scroll'); d.scroll = true; }
+      else ROOM.pull = clamp(-ty / (vh * .35));                              // the room leans in as you push
+      d.x = e.clientX; d.y = e.clientY; d.t = now;
+      return;
+    }
     if (!d.moved) { d.moved = true; touch(); }
     P.lastAct = now;
     const k = perPx();
     P.yaw -= dx * k;
-    if (d.mouse) P.pitch += dy * k;                         // on touch, vertical movement belongs to the page
+    if (d.mouse) P.pitch += dy * k;
     d.vx = lerp(d.vx, -dx * k / dt, .5); d.vy = lerp(d.vy, d.mouse ? dy * k / dt : 0, .5);
     d.x = e.clientX; d.y = e.clientY; d.t = now;
   });
   const end = e => {
     const d = P.drag; if (!d || d.id !== e.pointerId) return;
-    if (!RM && performance.now() - d.t < 90) { P.vy = d.vx; P.vp = d.vy; }   // let go while moving: the head keeps turning, softly
+    if (d.axis === 'v') {
+      if (d.scroll) { if (!RM && Math.abs(d.sv) > .2) scrollBy({ top: clamp(d.sv * 320, -vh * .8, vh * .8), behavior: 'smooth' }); }
+      else if (ROOM.held && -(e.clientY - d.y0) > 40) { if (pushCounts(performance.now())) ROOM.attempts++; nudge(); }
+      ROOM.pull = 0;
+    } else if (!RM && performance.now() - d.t < 90) { P.vy = d.vx; P.vp = d.vy; }   // let go while moving: the head keeps turning, softly
     P.drag = null; cv.classList.remove('is-drag'); P.lastAct = performance.now();
   };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   cv.addEventListener('lostpointercapture', end);
-  // trackpad: a sideways two-finger gesture turns the head; a vertical one still scrolls the page
+  // trackpad: a sideways two-finger gesture turns the head; a vertical one is about the page
   cv.addEventListener('wheel', e => {
     if (!P.live || Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 1.2 || e.ctrlKey) return;
     e.preventDefault();
     const px = e.deltaX * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vw : 1);
     touch(); P.yaw += px * perPx() * .9; P.vy = 0;
   }, { passive: false });
+  addEventListener('wheel', e => {
+    const now = performance.now(), fresh = now - ROOM.burstT > 220; ROOM.burstT = now;
+    if (!ROOM.held || e.ctrlKey) return;
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 1.2) return;               // sideways: looking (handled above)
+    e.preventDefault();
+    if (fresh) { ROOM.ignoreBurst = false; ROOM.burstSum = 0; ROOM.burstUsed = false; }
+    if (ROOM.ignoreBurst) return;
+    const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vh : 1);
+    ROOM.burstSum += dy;
+    if (ROOM.burstSum < -24) { releaseRoom('up'); scrollBy(0, dy); return; }
+    if (ROOM.burstSum > 30 && !ROOM.burstUsed) {
+      ROOM.burstUsed = true;
+      if (!pushCounts(now)) return nudge();                                 // just arrived, or the same push again: the room holds, and says so
+      if (++ROOM.attempts >= 2) { releaseRoom('scroll'); scrollBy(0, dy); } else nudge();
+    }
+  }, { passive: false });
   addEventListener('keydown', e => {
-    if (!P.live || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.metaKey) return;
-    const tg = e.target; if (tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName))) return;
-    touch(); P.vy = (e.key === 'ArrowLeft' ? -1 : 1) * .0016;
+    const tg = e.target; if (tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(tg.tagName))) return;
+    if (e.altKey || e.metaKey || e.ctrlKey) return;
+    if (P.live && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { touch(); P.vy = (e.key === 'ArrowLeft' ? -1 : 1) * .0016; return; }
+    if (!ROOM.held) return;
+    const down = ['ArrowDown', 'PageDown', ' ', 'End'].includes(e.key), up = ['ArrowUp', 'PageUp', 'Home'].includes(e.key);
+    if (!down && !up) return;
+    e.preventDefault();
+    if (up) { releaseRoom('up'); scrollBy({ top: -vh * .4, behavior: RM ? 'auto' : 'smooth' }); return; }
+    if (!pushCounts(performance.now())) return nudge();
+    if (++ROOM.attempts >= 2) { releaseRoom('scroll'); scrollBy({ top: vh * .5, behavior: RM ? 'auto' : 'smooth' }); } else nudge();
   });
 }
 const showCue = (el, on) => { if (el && on !== el.classList.contains('is-on')) el.classList.toggle('is-on', on); };
@@ -378,15 +471,6 @@ function pano(raw, t, dt) {
   P.live = inside && alpha > .6 && hold < .97;
   cv.classList.toggle('is-live', P.live);
 
-  // hints: first "look around"; once the visitor has looked, "scroll to continue" — each disappears as soon as it's done
-  showCue(P.cue, !P.touched && P.live && hold < .1);
-  if (P.touched && P.live && !P.movedOn) {
-    if (P.cueY == null) { if (hold > .1) P.movedOn = true; else if (!P.drag && t - P.lastAct > 650) P.cueY = scrollY; }
-    else if (Math.abs(scrollY - P.cueY) > 50 || hold > .14) P.movedOn = true;
-  }
-  showCue(P.scue, P.cueY != null && !P.movedOn && P.live);
-  if (alpha <= 0) return;
-
   // inertia
   if (!P.drag && (P.vy || P.vp)) {
     P.yaw += P.vy * dt; P.pitch += P.vp * dt;
@@ -396,17 +480,30 @@ function pano(raw, t, dt) {
   P.pitch = clamp(P.pitch, -BOT + 20 * DEG, TOP - 18 * DEG);
   P.yaw = wrapA(P.yaw);
 
+  // how much has been looked at while held; once it's enough, the page is handed back
+  if (ROOM.held) {
+    P.explored += Math.abs(wrapA(P.yaw - (P.prevYaw ?? P.yaw)));
+    if (P.drag && P.drag.moved) P.lookMs += dt;
+    if ((P.explored > 60 * DEG || P.lookMs > 2000) && !P.drag && t - P.lastAct > 450 && Math.abs(P.vy) < .0003) releaseRoom('explored');
+  }
+  P.prevYaw = P.yaw;
+
+  // hints: "look around" on arrival (and again if the visitor tries to scroll on before looking);
+  // "scroll to continue" once the room has been explored — each disappears as soon as it's done
+  showCue(P.cue, P.live && hold < .15 && (!P.touched || t < ROOM.nudgeUntil));
+  if (P.cue && P.drag && P.drag.axis === 'h') P.cue.style.setProperty('--dx', clamp((P.drag.x - P.drag.x0) * .12, -16, 16) + 'px');
+  if (P.cueY != null && !P.movedOn && (Math.abs(scrollY - P.cueY) > 50 || hold > .2)) P.movedOn = true;
+  showCue(P.scue, P.cueY != null && !P.movedOn && P.live);
+  if (alpha <= 0) return;
+
   // walking in: the room starts wide (seen through the door) and comes to eye level as you step inside
   const enter = RM ? 1 : ease(map(p, .45, PEND));
-  // moving on: every bit of scroll turns the gaze toward a candle-lit table and takes a step closer
-  const x = RM ? 0 : map(hold, 0, .92), out = 1 - (1 - x) * (1 - x);
-  const sway = RM ? 0 : Math.sin(t * .00041) * .35 * DEG * (P.drag ? 0 : 1);
-  const yawU = P.yaw + sway;
-  const yaw = yawU + wrapA(PANO.exitYaw - yawU) * out;
-  const V = lerp(TOP + BOT, baseV(), enter) * lerp(1, .84, out);
+  // leaving (only by the visitor's own scroll, after the hold): a quiet step closer as the room darkens
+  const x = RM ? 0 : map(hold, .15, 1), out = x * x * (3 - 2 * x);
+  ROOM.lean = lerp(ROOM.lean, RM ? 0 : Math.max(ROOM.kick, ROOM.pull), 1 - Math.exp(-dt / 90));
+  const V = lerp(TOP + BOT, baseV(), enter) * lerp(1, .88, out) * (1 - .06 * ROOM.lean);
   const half = Math.min(V / 2, (TOP + BOT) / 2 - .5 * DEG);
-  let pitch = lerp(P.pitch, (PHONE() ? -5 : -7) * DEG, out);
-  pitch = clamp(pitch, -BOT + half, TOP - half);
+  const pitch = clamp(P.pitch, -BOT + half, TOP - half);
   panoV = half * 2;
   // through the doorway the view is centred on the opening, wherever it is on screen
   const F = A.F || { x: vw / 2, y: vh / 2 };
@@ -416,7 +513,7 @@ function pano(raw, t, dt) {
   const w = Math.round(cv.clientWidth * dpr), h = Math.round(cv.clientHeight * dpr);
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   gl.viewport(0, 0, w, h);
-  gl.uniform4f(P.uni.cam, yaw, pitch, Math.tan(half), w / h);
+  gl.uniform4f(P.uni.cam, P.yaw, pitch, Math.tan(half), w / h);
   gl.uniform3f(P.uni.pr, PANO.u0, PANO.vc, PANO.R);
   gl.uniform2f(P.uni.off, (F.x / vw) * 2 - 1, 1 - (F.y / vh) * 2);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -720,6 +817,7 @@ addEventListener('keydown', e => { if (e.key === 'Escape' && sheetOpen) setSheet
 /* in-page links: land on the meaningful frame of a pinned stage */
 function jump(e) {
   const href = e.currentTarget.getAttribute('href'); if (!href || href[0] !== '#') return;
+  if (!e.currentTarget.hasAttribute('data-enter')) { releaseRoom('nav'); ROOM.suppressUntil = performance.now() + 2000; }   // a link always goes where it says
   let y = null;
   const arr = stages.find(s => s.id === 'arrival'), tab = stages.find(s => s.id === 'table');
   if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) { y = arr.top + (arr.h - vh) * WALK + 1; panoLoad(); }   // walk in
@@ -958,6 +1056,7 @@ function frame(t) {
   const arr = stages.find(s => s.id === 'arrival'), tab = stages.find(s => s.id === 'table');
   breathe = RM ? 0 : (1 - map(arr.p, 0, .08)) * (Math.sin(t * .00035) * .5 + .5) * .012;
   const inView = s => scrollY + vh > s.top - vh && scrollY < s.top + s.h + vh;
+  roomFrame(t, dt);
   if (inView(arr)) { arrival(arr.p); pano(arr.p, t, dt); } else P.live = false;
   if (inView(tab)) table(tab.p, t);
   steam && inView(tab) && steam.tick(t);
