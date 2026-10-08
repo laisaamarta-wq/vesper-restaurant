@@ -239,24 +239,43 @@ function panoLoad() {
   P.loading = true;
   const gl = P.gl;
   const big = (gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0) >= 8192;
-  const src = `assets/web/interior-360-${big ? 8192 : 4096}.webp?v=1`;
-  const img = new Image(); img.decoding = 'async';
-  img.onload = () => {
-    (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(() => {
-      if (!P.gl || P.failed) return;
-      const tx = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tx);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);           // the room closes on itself behind you
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
-      if (gl.getError() !== gl.NO_ERROR) { P.failed = true; return; }
-      gl.uniform1i(P.uni.tx, 0);
-      P.ok = true;
+  const W = big ? 8192 : 4096, H = W / 4;
+  const src = `assets/web/interior-360-${W}.webp?v=1`;
+  const tx = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tx);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);             // the room closes on itself behind you
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.uniform1i(P.uni.tx, 0);
+  const ready = () => { if (gl.getError() !== gl.NO_ERROR) { P.failed = true; return; } P.ok = true; };
+  const fail = () => { P.failed = true; };
+  // decoded off the main thread, then handed to the GPU in four slices on separate frames,
+  // so a scroll that is already under way never stalls on one big upload
+  const sliced = () => fetch(src).then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+    .then(b => createImageBitmap(b))
+    .then(bmp => {
+      if (bmp.width !== W || bmp.height !== H) throw new Error('size');
+      gl.bindTexture(gl.TEXTURE_2D, tx);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, W, H, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
+      const N = 4, sw = W / N;
+      let i = 0;
+      const next = () => {
+        if (i >= N) { bmp.close && bmp.close(); return ready(); }
+        const x = i * sw; i++;
+        createImageBitmap(bmp, x, 0, sw, H)
+          .then(part => { gl.bindTexture(gl.TEXTURE_2D, tx); gl.texSubImage2D(gl.TEXTURE_2D, 0, x, 0, gl.RGB, gl.UNSIGNED_BYTE, part); part.close && part.close(); setTimeout(next, 16); })
+          .catch(fail);
+      };
+      next();
     });
+  const whole = () => {
+    const img = new Image(); img.decoding = 'async';
+    img.onload = () => (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(() => {
+      gl.bindTexture(gl.TEXTURE_2D, tx); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img); ready();
+    });
+    img.onerror = fail; img.src = src;
   };
-  img.onerror = () => { P.failed = true; };
-  img.src = src;
+  if (window.createImageBitmap) sliced().catch(() => { if (!P.ok) whole(); }); else whole();
 }
 const wrapA = a => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
 // vertical field of view for this screen: ~82° across on a desktop, a tall eye-level frame on a phone
