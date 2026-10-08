@@ -332,7 +332,7 @@ html.is-held .pano.is-live{touch-action:none}
 .mi__photo{display:none}
 .mi--tap{cursor:pointer;-webkit-tap-highlight-color:transparent;outline-offset:6px}
 .mi--tap .mi__photo{display:block;padding-top:14px}
-.mi__photo-in{--peek:112px;position:relative;height:var(--peek);width:min(100%, 90svh);overflow:hidden;border-radius:2px;background:#191512;
+.mi__photo-in{--peek:150px;position:relative;height:var(--peek);width:min(100%, 90svh);overflow:hidden;border-radius:2px;background:#191512;
   transition:height .8s cubic-bezier(.65,0,.25,1)}
 .mi__photo img{display:block;width:100%;aspect-ratio:3/2;object-fit:cover;
   /* closed: the preview is framed on the food itself (--fy: where the dish sits in the photograph) */
