@@ -89,8 +89,12 @@ function measure() {
   vw = innerWidth; vh = innerHeight;
   const y = scrollY;
   stages.forEach(s => { const r = s.el.getBoundingClientRect(); s.top = r.top + y; s.h = s.el.offsetHeight; });
+  // the walk ends the moment the doorway has passed the edges of the screen: from there you are in the room
+  PIN = coverP(); PEND = Math.min(.95, PIN + .025);
   const a = stages.find(s => s.id === 'arrival');
-  if (a) WALK = clamp((NARROW.matches ? 2.18 : 2.81) * WARP.L / Math.max(1, a.h / vh - 1), .3, .9);
+  // same walking pace as always (2.81 screens of scroll per full camera move on desktop, 2.18 on phones)
+  if (a) WALK = clamp((NARROW.matches ? 2.18 : 2.81) * PEND / Math.max(1, a.h / vh - 1), .2, .9);
+  ENTER.build();
 }
 function targets() {
   const y = scrollY;
@@ -108,48 +112,60 @@ const A = {
   glow: $('[data-layer="glow"]'), shade: $('[data-layer="shade"]'), hero: $('[data-hero]'), inside: $('[data-inside]'),
 };
 let breathe = 0;
-// The walk-in uses the first part of the stage (the same scroll distance as before: 2.81 screens on
-// desktop, 2.18 on phones); what's left is time inside the room — to look around in 360° — before
-// the page moves on. Recomputed in measure() from the real stage height.
-let WALK = .5;
-/* Scroll → camera progress. Once the doorway is crossed the room already fills the screen;
-   that stretch (camera .58 → .86) passes three times faster, with soft ends, so the visitor
-   isn't left scrolling through a held frame before the room comes alive. */
-const WARP = (() => {
-  const N = 1000, tbl = new Float32Array(N + 1), A = .58, B = .86, K = 3;
-  const sm = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-  const d = x => 1 - (1 - 1 / K) * sm(A, A + .05, x) * (1 - sm(B - .03, B, x));
-  let acc = 0; for (let i = 1; i <= N; i++) { acc += d((i - .5) / N); tbl[i] = acc; }
-  const L = acc / N; for (let i = 1; i <= N; i++) tbl[i] /= acc;
-  const sOf = x => { const f = clamp(x) * N, i = Math.min(N - 1, Math.floor(f)); return lerp(tbl[i], tbl[i + 1], f - i); };
-  const pOf = y => { y = clamp(y); let lo = 0, hi = N; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tbl[m] < y) lo = m; else hi = m; }
-    return (lo + (y - tbl[lo]) / Math.max(1e-6, tbl[hi] - tbl[lo])) / N; };
-  return { L, sOf, pOf };
-})();
-const camP = raw => WARP.pOf(Math.min(1, raw / WALK));
+/* The arrival stage has two parts.
+   WALK  — street → door → through the doorway. It ends exactly when the doorway has passed the
+           edges of the screen (PIN, measured for this screen), so there is no held frame after it.
+   then  — inside: the room is live at once (look around), and every further scroll moves the camera on,
+           turning toward a candle-lit table before the next chapter. Nothing on this stage ever stands still
+           while the visitor scrolls. */
+let WALK = .5, PIN = .66, PEND = .685;
+const camP = raw => PEND * Math.min(1, raw / WALK);
+function doorway(p) {
+  const De = coverRect(ART.ext, ART.ext.door);
+  const C = { x: vw / 2, y: vh * .5 }, Pe = { x: De.cx, y: De.cy };
+  // one camera depth for the whole walk-in (log-linear = constant perceived speed). On a tall screen the arched
+  // doorway is as tall as the screen itself, so the camera steps further through it to really be inside.
+  const Zend = Math.max(vw / De.w, vh / De.h) * (vw < vh ? 1.4 : 1.12);
+  const Z = Math.pow(Zend, ease(map(p, 0, .84))) * (1 + breathe);
+  const e = easeOut(map(p, .05, .7));
+  const F = { x: lerp(Pe.x, C.x, e), y: lerp(Pe.y, C.y, e) };
+  const w = De.w * Z, h = De.h * Z;
+  return { De, C, Pe, Z, F, w, h, L: F.x - w / 2, T: F.y - h / 2, ry: h * ART.ext.arch };
+}
+// first camera position at which the arched doorway covers the whole screen (corners included)
+function coverP() {
+  const keep = breathe; breathe = 0;
+  let found = .84;
+  for (let p = .3; p <= .84; p += .0025) {
+    const g = doorway(p);
+    if (g.L > 0 || g.T > 0 || g.L + g.w < vw || g.T + g.h < vh) continue;
+    const cx = g.L + g.w / 2, rx = g.w / 2, cy = g.T + g.ry;
+    const inArch = x => cy <= 0 || ((x - cx) / rx) ** 2 + ((0 - cy) / g.ry) ** 2 <= 1;
+    if (inArch(0) && inArch(vw)) { found = p; break; }
+  }
+  breathe = keep;
+  return found;
+}
 function arrival(raw) {
   const hold = map(raw, WALK, 1);
   const p = camP(raw);
-  const De = coverRect(ART.ext, ART.ext.door);
-  const Dd = coverRect(ART.door, ART.door.door);
-  const C = { x: vw / 2, y: vh * .5 };
-  const Pe = { x: De.cx, y: De.cy };
+  const inside = p >= PIN - .001;
+  A.isIn = inside;
 
   if (RM) {                                    // reduced motion: dissolves only
-    A.ext.style.opacity = 1 - map(p, .25, .55);
+    A.ext.style.opacity = 1 - map(p, .2, .45);
     A.door.style.opacity = 0;
-    A.int.style.opacity = map(p, .25, .55); A.int.style.clipPath = 'none';
+    A.int.style.opacity = map(p, .2, .45); A.int.style.clipPath = 'none';
     A.hero.style.opacity = 1 - map(p, 0, .15);
-    A.inside.style.opacity = map(p, .65, .8) * (P.ok ? P.textK * (1 - map(hold, .2, .34)) : 1); A.inside.classList.toggle('is-in', p > .6);
+    A.inside.style.opacity = map(p, .45, PIN) * (P.ok ? P.textK * (1 - map(hold, .08, .3)) : 1); A.inside.classList.toggle('is-in', p > .44);
     A.glow.style.opacity = 0;
+    A.F = { x: vw / 2, y: vh / 2 };
     return;
   }
 
-  // one camera depth for the whole walk-in (log-linear = constant perceived speed)
-  const Zend = Math.max(vw / De.w, vh / De.h) * 1.12;
-  const u = ease(map(p, 0, .84));
-  const Z = Math.pow(Zend, u) * (1 + breathe);
-  const F = { x: lerp(Pe.x, C.x, easeOut(map(p, .05, .7))), y: lerp(Pe.y, C.y, easeOut(map(p, .05, .7))) };
+  const g = doorway(p), { De, C, Pe, Z, F } = g;
+  const Dd = coverRect(ART.door, ART.door.door);
+  A.F = F;
 
   // exterior — the street
   A.ext.style.transform = camT(Pe, F, Z);
@@ -162,32 +178,30 @@ function arrival(raw) {
   A.door.style.opacity = map(Z, zc, zc * 1.3);
   A.ext.style.opacity = 1 - map(Z, zc * 1.25, zc * 1.4);
 
-  // the doorway becomes the frame of the room
-  const w = De.w * Z, h = De.h * Z;
-  const L = F.x - w / 2, T = F.y - h / 2;
+  // the doorway becomes the frame of the room (the 360° room is drawn in the same opening, see pano())
+  const { w, h, L, T, ry } = g;
   const inset = `${T}px ${vw - (L + w)}px ${vh - (T + h)}px ${L}px`;
-  const ry = h * ART.ext.arch;
   const r = `round ${w / 2}px ${w / 2}px 0 0 / ${ry}px ${ry}px 0 0`;
-  const full = p > .84;
-  A.int.style.clipPath = full ? 'inset(0 0 0 0)' : `inset(${inset} ${r})`;
+  A.int.style.clipPath = inside ? 'inset(0 0 0 0)' : `inset(${inset} ${r})`;
   A.int.style.opacity = map(p, .38, .56);
+  // the photograph is the fallback if the 360° room can't be shown
   const hd = h / vh;                             // the room is further away than the door: it grows more slowly
-  const Zi = full ? (1 + .12 * easeOut(map(p, .84, .95))) * (1 + .035 * ease(hold)) : Math.max(.5, Math.min(1, .38 + .62 * hd));   // in the hold: a slow last step into the room
+  const Zi = inside ? (1 + .06 * easeOut(map(p, PIN, PEND))) * (1 + .06 * hold) : Math.max(.5, Math.min(1, .38 + .62 * hd));
   A.int.style.transform = camT(C, F, Zi);
 
-  // warmth on the threshold
-  A.glow.style.opacity = .75 * Math.sin(Math.PI * map(p, .5, .95));
-  A.shade.style.opacity = 1 - .35 * map(p, .4, .8) + .35 * map(p, .85, 1);
+  // warmth on the threshold, gone as you step in
+  A.glow.style.opacity = .75 * Math.sin(Math.PI * map(p, .5, PEND + .03));
+  A.shade.style.opacity = 1 - .35 * map(p, .4, PIN);
 
   // type
   const ho = 1 - map(p, .01, .12);
   A.hero.style.opacity = ho;
   A.hero.style.transform = `translate3d(0, ${-map(p, 0, .15) * 40}px, 0)`;
   A.hero.style.visibility = ho <= 0 ? 'hidden' : '';
-  // once the 360° room is there, the line steps aside: on the first look around, or as the visitor moves on
-  const io = map(p, .86, .93) * (P.ok ? P.textK * (1 - map(hold, .2, .34)) : 1);
+  // the line arrives with you, and steps aside on the first look around or as you move on
+  const io = map(p, PIN - .04, PEND) * (P.ok ? P.textK * (1 - map(hold, .08, .3)) : 1);
   A.inside.style.opacity = io;
-  A.inside.classList.toggle('is-in', p > .85);
+  A.inside.classList.toggle('is-in', p > PIN - .05);
 }
 
 /* ==========================================================
@@ -196,7 +210,8 @@ function arrival(raw) {
    every screen pixel becomes a ray, the ray becomes a point on the cylinder. Drag / swipe / a
    sideways trackpad gesture turns the head; vertical scrolling is never taken — it carries the
    visitor on, and on the way out the gaze settles on a candle-lit table (the next chapter).
-   If WebGL or the image is unavailable, the interior photograph underneath simply stays.
+   The room is first seen through the doorway itself, so stepping in and being able to look around
+   are one moment. If WebGL or the image is unavailable, the interior photograph simply stays.
    ========================================================== */
 const DEG = Math.PI / 180;
 const PANO = {
@@ -208,11 +223,11 @@ const PANO = {
 };
 const TOP = Math.atan(PANO.vc / PANO.R), BOT = Math.atan((1 - PANO.vc) / PANO.R);
 const P = {
-  cv: $('[data-pano]'), cue: $('[data-lookcue]'),
+  cv: $('[data-pano]'), cue: $('[data-lookcue]'), scue: $('[data-scrollcue]'),
   gl: null, ok: false, loading: false, failed: false, fadeIn: 0,
   yaw: 0, pitch: PANO.pitch0, vy: 0, vp: 0,
-  drag: null, touched: false, seen: false, textK: 1,
-  glanceAt: 0, glanceCut: false, settleAt: 0, live: false,
+  drag: null, touched: false, seen: false, textK: 1, live: false,
+  lastAct: 0, cueY: null, movedOn: false,
   uni: null,
 };
 function panoInit() {
@@ -224,9 +239,9 @@ function panoInit() {
   const prec = hp && hp.precision > 0 ? 'highp' : 'mediump';
   const vs = 'attribute vec2 a; varying vec2 q; void main(){ q = a; gl_Position = vec4(a, 0., 1.); }';
   const fs = `precision ${prec} float;
-    varying vec2 q; uniform sampler2D tx; uniform vec4 cam; uniform vec3 pr;
+    varying vec2 q; uniform sampler2D tx; uniform vec4 cam; uniform vec3 pr; uniform vec2 off;
     void main(){
-      vec3 d = vec3(q.x * cam.z * cam.w, q.y * cam.z, -1.);
+      vec3 d = vec3((q.x - off.x) * cam.z * cam.w, (q.y - off.y) * cam.z, -1.);
       float c = cos(cam.y), s = sin(cam.y);
       float y = d.y * c - d.z * s, z = d.y * s + d.z * c;
       float u = pr.x + (atan(d.x, -z) + cam.x) / 6.2831853;
@@ -241,7 +256,7 @@ function panoInit() {
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const loc = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  P.uni = { cam: gl.getUniformLocation(pr, 'cam'), pr: gl.getUniformLocation(pr, 'pr'), tx: gl.getUniformLocation(pr, 'tx') };
+  P.uni = { cam: gl.getUniformLocation(pr, 'cam'), pr: gl.getUniformLocation(pr, 'pr'), tx: gl.getUniformLocation(pr, 'tx'), off: gl.getUniformLocation(pr, 'off') };
   P.gl = gl;
   cv.addEventListener('webglcontextlost', e => { e.preventDefault(); P.ok = false; P.failed = true; cv.style.opacity = 0; cv.classList.remove('is-live'); });
   P.cue && ($('[data-lookcue-label]').textContent = FINE ? 'Drag to look around' : 'Swipe to look around');
@@ -302,15 +317,7 @@ function baseV() {
 let panoV = 1;
 function touch() {
   if (!P.touched) { P.touched = true; P.cue && P.cue.classList.remove('is-on'); }
-  P.seen = true;
-  // the welcoming glance hands over smoothly to the visitor's own look
-  if (P.glanceAt && !P.glanceCut) { P.yaw += glanceAt(performance.now()); P.glanceCut = true; }
-}
-function glanceAt(t) {
-  if (!P.glanceAt || P.glanceCut || RM) return 0;
-  const k = (t - P.glanceAt) / 3000;
-  if (k <= 0 || k >= 1) return 0;
-  return -13 * DEG * Math.sin(Math.PI * easeWalk(k));     // a slow look along the banquette, and back to the bar
+  P.seen = true; P.lastAct = performance.now();
 }
 function bindLook() {
   const cv = P.cv;
@@ -326,6 +333,7 @@ function bindLook() {
     const dx = e.clientX - d.x, dy = e.clientY - d.y, now = performance.now(), dt = Math.max(1, now - d.t);
     if (!d.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
     if (!d.moved) { d.moved = true; touch(); }
+    P.lastAct = now;
     const k = perPx();
     P.yaw -= dx * k;
     if (d.mouse) P.pitch += dy * k;                         // on touch, vertical movement belongs to the page
@@ -335,7 +343,7 @@ function bindLook() {
   const end = e => {
     const d = P.drag; if (!d || d.id !== e.pointerId) return;
     if (!RM && performance.now() - d.t < 90) { P.vy = d.vx; P.vp = d.vy; }   // let go while moving: the head keeps turning, softly
-    P.drag = null; cv.classList.remove('is-drag');
+    P.drag = null; cv.classList.remove('is-drag'); P.lastAct = performance.now();
   };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   cv.addEventListener('lostpointercapture', end);
@@ -352,29 +360,32 @@ function bindLook() {
     touch(); P.vy = (e.key === 'ArrowLeft' ? -1 : 1) * .0016;
   });
 }
+const showCue = (el, on) => { if (el && on !== el.classList.contains('is-on')) el.classList.toggle('is-on', on); };
 function pano(raw, t, dt) {
   const cv = P.cv; if (!cv || !P.gl) return;
   const p = camP(raw), hold = map(raw, WALK, 1);
+  const inside = p >= PIN - .001;
   if (!P.loading && raw > .04) panoLoad();
   // back outside: the next entry is welcomed again
-  if (p < .86) { P.glanceAt = 0; P.glanceCut = false; P.settleAt = 0; }
-  if (p < .8) P.seen = false;
+  if (p < PIN - .06) { P.seen = false; P.cueY = null; P.movedOn = false; }
   P.textK = lerp(P.textK, P.seen ? 0 : 1, 1 - Math.exp(-dt / 260));
-  if (!P.ok) { cv.style.opacity = 0; cv.classList.remove('is-live'); P.live = false; P.cue && P.cue.classList.remove('is-on'); return; }
-  P.fadeIn = Math.min(1, P.fadeIn + dt / 700);              // if the image arrives late, it still fades in
-  const alpha = map(p, .87, .94) * P.fadeIn;
+  if (!P.ok) { cv.style.opacity = 0; cv.classList.remove('is-live'); P.live = false; showCue(P.cue, false); showCue(P.scue, false); return; }
+  P.fadeIn = Math.min(1, P.fadeIn + dt / 600);              // if the image arrives late, it still fades in
+  // the room is seen through the doorway first — same opening, same fade as the photograph it replaces
+  const alpha = (RM ? map(p, .2, .45) : map(p, .38, .56)) * P.fadeIn;
   cv.style.opacity = alpha < .002 ? 0 : alpha.toFixed(3);
-  P.live = alpha > .6;
+  cv.style.clipPath = inside || RM ? '' : A.int.style.clipPath;
+  P.live = inside && alpha > .6 && hold < .97;
   cv.classList.toggle('is-live', P.live);
-  if (alpha <= 0) return;
 
-  // the room appears at the same wide framing as the photograph beneath it; once it is fully there the
-  // camera settles to eye level, and one slow glance shows that the room continues around you
-  if (alpha >= .999 && !P.settleAt) { P.settleAt = t; if (!RM) P.glanceAt = t + 450; }
-  if (P.cue) {
-    const on = !P.touched && P.live && hold < .3 && (RM || (P.settleAt && t > P.settleAt + 600));
-    if (on !== P.cue.classList.contains('is-on')) P.cue.classList.toggle('is-on', on);
+  // hints: first "look around"; once the visitor has looked, "scroll to continue" — each disappears as soon as it's done
+  showCue(P.cue, !P.touched && P.live && hold < .1);
+  if (P.touched && P.live && !P.movedOn) {
+    if (P.cueY == null) { if (hold > .1) P.movedOn = true; else if (!P.drag && t - P.lastAct > 650) P.cueY = scrollY; }
+    else if (Math.abs(scrollY - P.cueY) > 50 || hold > .14) P.movedOn = true;
   }
+  showCue(P.scue, P.cueY != null && !P.movedOn && P.live);
+  if (alpha <= 0) return;
 
   // inertia
   if (!P.drag && (P.vy || P.vp)) {
@@ -385,17 +396,20 @@ function pano(raw, t, dt) {
   P.pitch = clamp(P.pitch, -BOT + 20 * DEG, TOP - 18 * DEG);
   P.yaw = wrapA(P.yaw);
 
-  const settle = RM ? .5 : P.settleAt ? 1 - easeWalk(clamp((t - P.settleAt) / 1600)) : 1;
-  // leaving: the gaze turns to a candle-lit table, a step closer — the next chapter begins there
-  const out = RM ? 0 : ease(map(hold, .38, .94));
+  // walking in: the room starts wide (seen through the door) and comes to eye level as you step inside
+  const enter = RM ? 1 : ease(map(p, .45, PEND));
+  // moving on: every bit of scroll turns the gaze toward a candle-lit table and takes a step closer
+  const x = RM ? 0 : map(hold, 0, .92), out = 1 - (1 - x) * (1 - x);
   const sway = RM ? 0 : Math.sin(t * .00041) * .35 * DEG * (P.drag ? 0 : 1);
-  const yawU = P.yaw + glanceAt(t) + sway;
+  const yawU = P.yaw + sway;
   const yaw = yawU + wrapA(PANO.exitYaw - yawU) * out;
-  const V = lerp(baseV(), TOP + BOT, settle) * lerp(1, .84, out);
+  const V = lerp(TOP + BOT, baseV(), enter) * lerp(1, .84, out);
   const half = Math.min(V / 2, (TOP + BOT) / 2 - .5 * DEG);
   let pitch = lerp(P.pitch, (PHONE() ? -5 : -7) * DEG, out);
   pitch = clamp(pitch, -BOT + half, TOP - half);
   panoV = half * 2;
+  // through the doorway the view is centred on the opening, wherever it is on screen
+  const F = A.F || { x: vw / 2, y: vh / 2 };
 
   // draw
   const gl = P.gl, dpr = Math.min(devicePixelRatio || 1, PHONE() ? 2 : 1.5);
@@ -404,6 +418,7 @@ function pano(raw, t, dt) {
   gl.viewport(0, 0, w, h);
   gl.uniform4f(P.uni.cam, yaw, pitch, Math.tan(half), w / h);
   gl.uniform3f(P.uni.pr, PANO.u0, PANO.vc, PANO.R);
+  gl.uniform2f(P.uni.off, (F.x / vw) * 2 - 1, 1 - (F.y / vh) * 2);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
@@ -673,7 +688,8 @@ function chrome() {
   const y = scrollY;
   let cur = chapters[0];
   for (const c of chapters) if (c.getBoundingClientRect().top <= vh * .5) cur = c;
-  const [n, name] = cur.dataset.chapterId.split('|');
+  let [n, name] = cur.dataset.chapterId.split('|');
+  if (cur === chapters[0] && A.isIn) [n, name] = ['02', 'The Room'];   // through the door, the room's chapter has begun
   if (chNum.textContent !== n) { chNum.textContent = n; chName.textContent = name; }
   const r = cur.getBoundingClientRect();
   chBar.parentElement.style.setProperty('--cp', clamp((vh * .5 - r.top) / r.height).toFixed(3));
@@ -706,7 +722,7 @@ function jump(e) {
   const href = e.currentTarget.getAttribute('href'); if (!href || href[0] !== '#') return;
   let y = null;
   const arr = stages.find(s => s.id === 'arrival'), tab = stages.find(s => s.id === 'table');
-  if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) { y = arr.top + (arr.h - vh) * WARP.sOf(LAND) * WALK; panoLoad(); }   // walk in
+  if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) { y = arr.top + (arr.h - vh) * WALK + 1; panoLoad(); }   // walk in
   else if (href === '#menu' && e.currentTarget.hasAttribute('data-to-menu')) y = tab.top + (tab.h - vh) * .9;
   else if (href === '#top') y = 0;
   else { const t = $(href); if (t) y = t.getBoundingClientRect().top + scrollY - (href === '#reserve' ? 40 : 0); }
@@ -716,7 +732,7 @@ function jump(e) {
   // it drives the page through the arrival timeline instead of the browser's quick smooth-scroll
   if (PHONE() && e.currentTarget.hasAttribute('data-enter')) {
     // reduced motion: no camera walk, but still a calm dissolve into the room rather than a cut
-    return RM ? glide(() => arr.top + (arr.h - vh) * WARP.sOf(LAND) * WALK, 1600) : enterGlide(arr);
+    return RM ? glide(() => arr.top + (arr.h - vh) * WALK + 1, 1600) : enterGlide(arr);
   }
   scrollTo({ top: y, behavior: RM ? 'auto' : 'smooth' });
 }
@@ -725,26 +741,31 @@ function jump(e) {
    squeezed the whole walk into one second. Here the camera's own progress is laid out in time:
    a soft first step, an even walk, an unhurried crossing of the threshold while the room fades in,
    and one continuous settle into the room — no pause between "outside" and "inside". */
-const LAND = .97;   // where ENTER sets you down: through the door, the room settling around you
 const easeInv = x => x < .5 ? Math.cbrt(x / 4) : 1 - Math.cbrt(2 * (1 - x)) / 2;   // inverse of ease()
 const ENTER = (() => {
+  // the camera's own progress (x: 0 → 1 over the walk) laid out in time:
+  // a soft first step, an even walk, an unhurried crossing of the threshold, and you are in
   const SPLIT = .78, N = 1000, tbl = new Float32Array(N + 1);
-  // time spent per unit of progress: slower at the start, through the doorway, and on arrival
-  const dens = c => 1 + 1.6 * Math.exp(-((c / .07) ** 2)) + .75 * Math.exp(-(((c - .47) / .11) ** 2)) + 1.3 * Math.exp(-(((1 - c) / .1) ** 2));
-  let acc = 0; for (let i = 1; i <= N; i++) { acc += dens((i - .5) / N); tbl[i] = acc; }
-  for (let i = 1; i <= N; i++) tbl[i] /= acc;
+  let cE = .7, xd = .65;
+  const dens = x => 1 + 1.6 * Math.exp(-((x / .07) ** 2)) + .75 * Math.exp(-(((x - xd) / .11) ** 2)) + .35 * Math.exp(-(((1 - x) / .08) ** 2));
+  function build() {
+    cE = SPLIT * ease(Math.min(1, PEND / .84)); xd = Math.min(.9, .47 / cE);
+    let acc = 0; for (let i = 1; i <= N; i++) { acc += dens((i - .5) / N); tbl[i] = acc; }
+    for (let i = 1; i <= N; i++) tbl[i] /= acc;
+  }
   const cAt = tau => { let lo = 0, hi = N; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tbl[m] < tau) lo = m; else hi = m; }
     const f = (tau - tbl[lo]) / Math.max(1e-6, tbl[hi] - tbl[lo]); return (lo + f) / N; };
-  const tauAt = c => { const i = Math.min(N, Math.max(0, Math.floor(c * N))); return tbl[i]; };
-  const prOf = c => c < SPLIT ? .84 * easeInv(c / SPLIT) : .84 + (LAND - .84) * (c - SPLIT) / (1 - SPLIT);
-  const cOf = pr => pr <= .84 ? SPLIT * ease(pr / .84) : SPLIT + (1 - SPLIT) * Math.min(1, (pr - .84) / (LAND - .84));
-  return { cAt, tauAt, prOf, cOf, T: 2700 };
+  const tauAt = x => tbl[Math.min(N, Math.max(0, Math.floor(x * N)))];
+  const pOf = x => .84 * easeInv(Math.min(1, x * cE / SPLIT));          // camera progress → camera position p
+  const xOf = p => SPLIT * ease(Math.min(1, p / .84)) / cE;
+  build();
+  return { build, cAt, tauAt, pOf, xOf, T: 2300 };
 })();
 function enterGlide(arr) {
   if (gliding) gliding();
   const span = () => (arr.h - vh) * WALK;
-  const pr0 = WARP.pOf((scrollY - arr.top) / Math.max(1, span()));
-  const tau0 = ENTER.tauAt(ENTER.cOf(pr0));
+  const p0 = PEND * clamp((scrollY - arr.top) / Math.max(1, span()));
+  const tau0 = ENTER.tauAt(ENTER.xOf(p0));
   if (tau0 >= .995) return;
   const dur = ENTER.T * (1 - tau0), t0 = performance.now();
   let raf = 0;
@@ -752,8 +773,8 @@ function enterGlide(arr) {
   ['touchstart', 'wheel', 'keydown'].forEach(ev => addEventListener(ev, stop, { passive: true }));   // a finger always wins
   const step = now => {
     const k = clamp((now - t0) / dur);
-    const pr = ENTER.prOf(ENTER.cAt(tau0 + (1 - tau0) * k));
-    window.scrollTo(0, arr.top + span() * WARP.sOf(pr));
+    const p = ENTER.pOf(ENTER.cAt(tau0 + (1 - tau0) * k));
+    window.scrollTo(0, arr.top + span() * Math.min(1, p / PEND) + (k >= 1 ? 1 : 0));
     if (k < 1) raf = requestAnimationFrame(step); else stop();
   };
   gliding = stop;
