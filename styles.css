@@ -99,6 +99,8 @@ body:not(.is-loading) .loader{opacity:0;visibility:hidden}
   background:linear-gradient(rgba(14,12,10,.55),rgba(14,12,10,0));opacity:0;transition:opacity .9s;
 }
 .nav.is-solid::before{opacity:1}
+/* over text (the room, the menu, reservations) the bar gets a real backdrop, so it never sits on words */
+.nav.is-reading::before{background:linear-gradient(rgba(14,12,10,.96),rgba(14,12,10,.96) calc(100% - 40px),rgba(14,12,10,0));opacity:1}
 .nav.is-hidden{transform:translateY(-110%);opacity:0}
 .nav__brand{font-family:var(--serif);font-size:26px;line-height:1}
 .nav__links{display:flex;gap:36px}

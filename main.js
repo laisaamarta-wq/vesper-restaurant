@@ -803,6 +803,9 @@ function chrome() {
   const off = nav.classList.contains('is-hidden') ? 0 : nav.offsetHeight;
   if (off !== navOff) { navOff = off; html.style.setProperty('--navoff', off + 'px'); }
   nav.classList.toggle('is-solid', y > vh * .2);
+  const nb = nav.offsetHeight;
+  const reading = ['room', 'menu', 'reserve'].some(id => { const r = document.getElementById(id).getBoundingClientRect(); return r.top < nb && r.bottom > 0; });
+  if (reading !== nav.classList.contains('is-reading')) nav.classList.toggle('is-reading', reading);
 }
 
 /* mobile sheet */
