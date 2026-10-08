@@ -90,7 +90,7 @@ function measure() {
   const y = scrollY;
   stages.forEach(s => { const r = s.el.getBoundingClientRect(); s.top = r.top + y; s.h = s.el.offsetHeight; });
   const a = stages.find(s => s.id === 'arrival');
-  if (a) WALK = clamp((NARROW.matches ? 2.18 : 2.81) / Math.max(1, a.h / vh - 1), .3, .9);
+  if (a) WALK = clamp((NARROW.matches ? 2.18 : 2.81) * WARP.L / Math.max(1, a.h / vh - 1), .3, .9);
 }
 function targets() {
   const y = scrollY;
@@ -111,10 +111,25 @@ let breathe = 0;
 // The walk-in uses the first part of the stage (the same scroll distance as before: 2.81 screens on
 // desktop, 2.18 on phones); what's left is time inside the room — to look around in 360° — before
 // the page moves on. Recomputed in measure() from the real stage height.
-let WALK = .61;
+let WALK = .5;
+/* Scroll → camera progress. Once the doorway is crossed the room already fills the screen;
+   that stretch (camera .58 → .86) passes three times faster, with soft ends, so the visitor
+   isn't left scrolling through a held frame before the room comes alive. */
+const WARP = (() => {
+  const N = 1000, tbl = new Float32Array(N + 1), A = .58, B = .86, K = 3;
+  const sm = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  const d = x => 1 - (1 - 1 / K) * sm(A, A + .05, x) * (1 - sm(B - .03, B, x));
+  let acc = 0; for (let i = 1; i <= N; i++) { acc += d((i - .5) / N); tbl[i] = acc; }
+  const L = acc / N; for (let i = 1; i <= N; i++) tbl[i] /= acc;
+  const sOf = x => { const f = clamp(x) * N, i = Math.min(N - 1, Math.floor(f)); return lerp(tbl[i], tbl[i + 1], f - i); };
+  const pOf = y => { y = clamp(y); let lo = 0, hi = N; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tbl[m] < y) lo = m; else hi = m; }
+    return (lo + (y - tbl[lo]) / Math.max(1e-6, tbl[hi] - tbl[lo])) / N; };
+  return { L, sOf, pOf };
+})();
+const camP = raw => WARP.pOf(Math.min(1, raw / WALK));
 function arrival(raw) {
   const hold = map(raw, WALK, 1);
-  const p = Math.min(1, raw / WALK);
+  const p = camP(raw);
   const De = coverRect(ART.ext, ART.ext.door);
   const Dd = coverRect(ART.door, ART.door.door);
   const C = { x: vw / 2, y: vh * .5 };
@@ -293,7 +308,7 @@ function touch() {
 }
 function glanceAt(t) {
   if (!P.glanceAt || P.glanceCut || RM) return 0;
-  const k = (t - P.glanceAt) / 3600;
+  const k = (t - P.glanceAt) / 3000;
   if (k <= 0 || k >= 1) return 0;
   return -13 * DEG * Math.sin(Math.PI * easeWalk(k));     // a slow look along the banquette, and back to the bar
 }
@@ -339,7 +354,7 @@ function bindLook() {
 }
 function pano(raw, t, dt) {
   const cv = P.cv; if (!cv || !P.gl) return;
-  const p = Math.min(1, raw / WALK), hold = map(raw, WALK, 1);
+  const p = camP(raw), hold = map(raw, WALK, 1);
   if (!P.loading && raw > .04) panoLoad();
   // back outside: the next entry is welcomed again
   if (p < .86) { P.glanceAt = 0; P.glanceCut = false; P.settleAt = 0; }
@@ -355,9 +370,9 @@ function pano(raw, t, dt) {
 
   // the room appears at the same wide framing as the photograph beneath it; once it is fully there the
   // camera settles to eye level, and one slow glance shows that the room continues around you
-  if (alpha >= .999 && !P.settleAt) { P.settleAt = t; if (!RM) P.glanceAt = t + 900; }
+  if (alpha >= .999 && !P.settleAt) { P.settleAt = t; if (!RM) P.glanceAt = t + 450; }
   if (P.cue) {
-    const on = !P.touched && P.live && hold < .3 && (RM || (P.glanceAt && t > P.glanceAt + 900));
+    const on = !P.touched && P.live && hold < .3 && (RM || (P.settleAt && t > P.settleAt + 600));
     if (on !== P.cue.classList.contains('is-on')) P.cue.classList.toggle('is-on', on);
   }
 
@@ -370,7 +385,7 @@ function pano(raw, t, dt) {
   P.pitch = clamp(P.pitch, -BOT + 20 * DEG, TOP - 18 * DEG);
   P.yaw = wrapA(P.yaw);
 
-  const settle = RM ? .5 : P.settleAt ? 1 - easeWalk(clamp((t - P.settleAt) / 2000)) : 1;
+  const settle = RM ? .5 : P.settleAt ? 1 - easeWalk(clamp((t - P.settleAt) / 1600)) : 1;
   // leaving: the gaze turns to a candle-lit table, a step closer — the next chapter begins there
   const out = RM ? 0 : ease(map(hold, .38, .94));
   const sway = RM ? 0 : Math.sin(t * .00041) * .35 * DEG * (P.drag ? 0 : 1);
@@ -691,7 +706,7 @@ function jump(e) {
   const href = e.currentTarget.getAttribute('href'); if (!href || href[0] !== '#') return;
   let y = null;
   const arr = stages.find(s => s.id === 'arrival'), tab = stages.find(s => s.id === 'table');
-  if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) { y = arr.top + (arr.h - vh) * LAND * WALK; panoLoad(); }   // walk in
+  if (href === '#room' && e.currentTarget.hasAttribute('data-enter')) { y = arr.top + (arr.h - vh) * WARP.sOf(LAND) * WALK; panoLoad(); }   // walk in
   else if (href === '#menu' && e.currentTarget.hasAttribute('data-to-menu')) y = tab.top + (tab.h - vh) * .9;
   else if (href === '#top') y = 0;
   else { const t = $(href); if (t) y = t.getBoundingClientRect().top + scrollY - (href === '#reserve' ? 40 : 0); }
@@ -701,7 +716,7 @@ function jump(e) {
   // it drives the page through the arrival timeline instead of the browser's quick smooth-scroll
   if (PHONE() && e.currentTarget.hasAttribute('data-enter')) {
     // reduced motion: no camera walk, but still a calm dissolve into the room rather than a cut
-    return RM ? glide(() => arr.top + (arr.h - vh) * LAND * WALK, 1600) : enterGlide(arr);
+    return RM ? glide(() => arr.top + (arr.h - vh) * WARP.sOf(LAND) * WALK, 1600) : enterGlide(arr);
   }
   scrollTo({ top: y, behavior: RM ? 'auto' : 'smooth' });
 }
@@ -728,7 +743,7 @@ const ENTER = (() => {
 function enterGlide(arr) {
   if (gliding) gliding();
   const span = () => (arr.h - vh) * WALK;
-  const pr0 = clamp((scrollY - arr.top) / Math.max(1, span()));
+  const pr0 = WARP.pOf((scrollY - arr.top) / Math.max(1, span()));
   const tau0 = ENTER.tauAt(ENTER.cOf(pr0));
   if (tau0 >= .995) return;
   const dur = ENTER.T * (1 - tau0), t0 = performance.now();
@@ -738,7 +753,7 @@ function enterGlide(arr) {
   const step = now => {
     const k = clamp((now - t0) / dur);
     const pr = ENTER.prOf(ENTER.cAt(tau0 + (1 - tau0) * k));
-    window.scrollTo(0, arr.top + span() * pr);
+    window.scrollTo(0, arr.top + span() * WARP.sOf(pr));
     if (k < 1) raf = requestAnimationFrame(step); else stop();
   };
   gliding = stop;
