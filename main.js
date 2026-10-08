@@ -779,7 +779,7 @@ function nightFx() {
    ========================================================== */
 const chapters = $$('[data-chapter-id]');
 const chNum = $('[data-chapter-num]'), chName = $('[data-chapter-name]'), chBar = $('[data-chapter-bar]'), chEl = $('[data-chapter]');
-let lastY = 0;
+let lastY = 0, navQuietUntil = 0, navOff = -1;
 const nav = $('[data-nav]');
 function chrome() {
   const y = scrollY;
@@ -797,7 +797,11 @@ function chrome() {
   chEl.classList.toggle('is-hidden', arr.p < .1 || quiet);
   // nav: out of the way while descending, back when the visitor looks up
   const dy = y - lastY;
-  if (Math.abs(dy) > 4) { nav.classList.toggle('is-hidden', dy > 0 && y > vh * .4 && !sheetOpen); lastY = y; }
+  if (performance.now() < navQuietUntil) lastY = y;              // the page adjusting itself is not the visitor looking up
+  else if (Math.abs(dy) > 4) { nav.classList.toggle('is-hidden', dy > 0 && y > vh * .4 && !sheetOpen); lastY = y; }
+  // the phone menu's sticky index steps below the bar whenever the bar is showing
+  const off = nav.classList.contains('is-hidden') ? 0 : nav.offsetHeight;
+  if (off !== navOff) { navOff = off; html.style.setProperty('--navoff', off + 'px'); }
   nav.classList.toggle('is-solid', y > vh * .2);
 }
 
@@ -900,66 +904,95 @@ $$('a[href^="#"]').forEach(a => a.addEventListener('click', jump));
 /* ==========================================================
    04 MENU — one interaction: the plate follows the cursor
    ========================================================== */
-/* touch menu: one photograph at a time, shown when its dish reaches the reading area.
-   Each photo loads only as its dish approaches; a dish has to rest in the reading band for a beat
-   before its photograph appears, so a quick flick never flashes images. The layer sits inside the
-   list and scrolls with it — no drift of its own — and nothing here ever touches the scroll. */
-function dishFloat(items) {
+/* phone menu: a printed menu you can touch. Tap a dish marked ● and it opens — its photograph
+   unfolds under the description, in the flow of the list, never over any text. Tapping another
+   dish folds the first one away; the dish you tapped stays where your finger left it. */
+function dishOpen(items) {
   const host = $('[data-menu]'); if (!host) return;
-  const mk = () => { const f = document.createElement('div'); f.className = 'dishfloat'; f.setAttribute('aria-hidden', 'true');
-    f.innerHTML = '<div class="dishfloat__in"><img alt="" decoding="async"></div>'; host.appendChild(f); return f; };
-  const layers = [mk(), mk(), mk()];
-  let flip = 0, cur = null, curLayer = null, raf = 0, live = false, cand = null, candT = 0;
-  const cache = new Map();
-  const load = li => { if (!PHONE()) return null; if (cache.has(li)) return cache.get(li); const im = new Image(); im.decoding = 'async'; im.src = li.dataset.img; cache.set(li, im); return im; };
-  const row = li => $('.mi__row', li) || li;
-  const IN_A = .30, IN_B = .64, STAY_A = .14, STAY_B = .80, DWELL = 160;   // fractions of the viewport; ms
-  const line = li => { const r = row(li).getBoundingClientRect(); return (r.top + r.height / 2) / vh; };
-  function place(layer, li) {
-    // sit just above the dish name, so the dish itself and what comes next stay readable
-    const r = row(li), h = layer.offsetHeight || 260;
-    const top = r.getBoundingClientRect().top - host.getBoundingClientRect().top;
-    layer.style.top = Math.max(0, top - h - 18) + 'px';
+  const hint = document.createElement('p'); hint.className = 'menu__hint'; hint.setAttribute('aria-hidden', 'true');
+  hint.innerHTML = 'Tap a dish marked <i></i> to see it';
+  host.insertBefore(hint, host.firstElementChild);
+  const ease = 'cubic-bezier(.22,.61,.36,1)';
+  items.forEach(li => {
+    const f = document.createElement('div'); f.className = 'mi__photo';
+    f.innerHTML = '<div class="mi__photo-in"><img alt="" decoding="async"></div>';
+    li.appendChild(f);
+    const img = $('img', f);
+    img.alt = 'The dish: ' + $('.mi__name', li).textContent;
+    li._f = f; li._img = img;
+  });
+  let open = null, mode = null;
+  function setMode() {
+    const on = PHONE(); if (on === mode) return; mode = on;
+    items.forEach(li => {
+      li.classList.toggle('mi--tap', on);
+      if (on) { li.setAttribute('role', 'button'); li.tabIndex = 0; li.setAttribute('aria-expanded', 'false'); }
+      else { li.removeAttribute('role'); li.removeAttribute('tabindex'); li.removeAttribute('aria-expanded'); }
+    });
+    if (!on && open) { fold(open, true); open = null; }
+    hint.hidden = !on;
   }
-  function show(li) {
-    if (curLayer) { const old = curLayer; old.classList.add('is-out'); old.classList.remove('is-on');
-      setTimeout(() => old.classList.remove('is-out'), 1200); }
-    cur = li; curLayer = null;
-    if (!li) return;
-    const layer = layers[flip = (flip + 1) % layers.length], img = $('img', layer), src = load(li);
-    layer.classList.remove('is-out', 'is-on');
-    img.src = li.dataset.img; place(layer, li);
-    curLayer = layer;
-    const go = () => { if (cur === li) requestAnimationFrame(() => requestAnimationFrame(() => layer.classList.add('is-on'))); };
-    (src.decode ? src.decode() : Promise.resolve()).catch(() => {}).then(go);
+  function unfold(li) {
+    const f = li._f, img = li._img;
+    if (!img.getAttribute('src')) img.src = li.dataset.wide || li.dataset.img;
+    const ready = () => img.classList.add('is-ready');
+    (img.decode ? img.decode() : Promise.resolve()).then(ready, ready);
+    li.classList.add('is-open'); li.setAttribute('aria-expanded', 'true');
+    f.style.transition = 'none'; f.style.height = '0px'; void f.offsetHeight;
+    f.style.transition = `height ${RM ? .3 : .75}s ${ease}`;
+    f.style.height = f.firstElementChild.offsetHeight + 'px';
+    const done = e => { if (e.target !== f || !li.classList.contains('is-open')) return; f.style.height = 'auto'; f.removeEventListener('transitionend', done); };
+    f.addEventListener('transitionend', done);
   }
-  function tick(now) {
-    raf = 0; if (!live) return;
-    if (!PHONE()) { if (cur) show(null); cand = null; return; }
-    if (cur) { const c = line(cur); if (c < STAY_A || c > STAY_B) show(null); }
-    if (!cur) {
-      let best = null, bd = 1;
-      items.forEach(li => { const c = line(li); if (c >= IN_A && c <= IN_B && Math.abs(c - .47) < bd) { bd = Math.abs(c - .47); best = li; } });
-      if (best !== cand) { cand = best; candT = now; }
-      if (cand && now - candT >= DWELL) show(cand);
-      else if (cand) ask();                 // keep watching until the dish has rested long enough
-    }
+  function fold(li, instant) {
+    const f = li._f;
+    li.classList.remove('is-open'); li.setAttribute('aria-expanded', 'false');
+    f.style.transition = 'none'; f.style.height = f.offsetHeight + 'px'; void f.offsetHeight;
+    f.style.transition = instant ? 'none' : `height ${RM ? .25 : .6}s ${ease}`;
+    f.style.height = '0px';
   }
-  const ask = () => { if (!raf) raf = requestAnimationFrame(tick); };
-  // load each photograph only as its dish comes within about a screen of the reading line
-  const near = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { load(e.target); near.unobserve(e.target); } }), { rootMargin: '0px 0px 90% 0px' });
+  // the tapped dish keeps its place on screen while the one above it folds away
+  function hold(li, ms) {
+    navQuietUntil = performance.now() + ms + 400;
+    const y0 = $('.mi__row', li).getBoundingClientRect().top, t0 = performance.now();
+    const step = now => {
+      const dy = $('.mi__row', li).getBoundingClientRect().top - y0;
+      if (Math.abs(dy) > .5) scrollBy(0, dy);
+      if (now - t0 < ms) requestAnimationFrame(step); else reveal(li);
+    };
+    requestAnimationFrame(step);
+  }
+  // if the photograph opened below the fold, bring it into view — gently, never past the dish's name
+  function reveal(li) {
+    const f = li._f, top = $('.mi__row', li).getBoundingClientRect().top;
+    const bottom = top + li.offsetHeight - f.offsetHeight + f.firstElementChild.offsetHeight;
+    const over = bottom - (vh - 24), room = top - 96;
+    navQuietUntil = performance.now() + 900;
+    if (over > 0 && room > 0) scrollBy({ top: Math.min(over, room), behavior: RM ? 'auto' : 'smooth' });
+  }
+  function toggle(li) {
+    if (!PHONE()) return;
+    hint.classList.add('is-gone');
+    if (open === li) { fold(li); open = null; return; }
+    const prev = open; open = li;
+    if (prev) fold(prev);
+    unfold(li);
+    hold(li, RM ? 320 : 780);
+  }
+  items.forEach(li => {
+    li.addEventListener('click', e => { if (e.target.closest('a')) return; toggle(li); });
+    li.addEventListener('keydown', e => { if (PHONE() && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(li); } });
+  });
+  // photographs load only as their dish comes near
+  const near = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting && PHONE()) { const i = new Image(); i.src = e.target.dataset.wide || e.target.dataset.img; near.unobserve(e.target); } }), { rootMargin: '0px 0px 60% 0px' });
   items.forEach(li => near.observe(li));
-  new IntersectionObserver(es => es.forEach(e => {
-    live = e.isIntersecting; if (live) ask(); else if (cur) show(null);
-  })).observe(host);
-  addEventListener('scroll', ask, { passive: true });
-  addEventListener('resize', () => { if (cur && curLayer) place(curLayer, cur); ask(); }, { passive: true });
+  setMode();
+  addEventListener('resize', setMode, { passive: true });
 }
 
 function menu() {
   const items = $$('.mi[data-img]');
-  // touch: no hover, so the room shows you the dish as you pass it.
-  if (items.length) dishFloat(items);   // active whenever PHONE() is true — re-checked on resize
+  if (items.length) dishOpen(items);   // the phone menu (re-checked on resize); desktop keeps the cursor peek
   // index highlight
   const links = $$('[data-mi]');
   const io = new IntersectionObserver(es => es.forEach(e => {
